@@ -13,7 +13,8 @@ from leadqualenv.environment.grader import classify_lead
 
 API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
 MODEL_NAME = os.getenv("MODEL_NAME", "meta-llama/Meta-Llama-3.1-70B-Instruct")
-API_KEY = os.getenv("HF_TOKEN") or os.getenv("OPENAI_API_KEY") or os.getenv("API_KEY")
+HF_TOKEN = os.getenv("HF_TOKEN")
+LOCAL_IMAGE_NAME = os.getenv("LOCAL_IMAGE_NAME")
 BENCHMARK = os.getenv("LEADQUALENV_BENCHMARK", "leadqualenv")
 MAX_STEPS = int(os.getenv("LEADQUALENV_MAX_STEPS", "10"))
 SEED = int(os.getenv("LEADQUALENV_SEED", "0"))
@@ -69,9 +70,9 @@ def deterministic_fallback(env: LeadQualEnv) -> Action:
 
 
 def create_client() -> OpenAI | None:
-    if not API_KEY:
+    if not HF_TOKEN:
         return None
-    return OpenAI(api_key=API_KEY, base_url=API_BASE_URL)
+    return OpenAI(api_key=HF_TOKEN, base_url=API_BASE_URL)
 
 
 def ask_model_for_action(client: OpenAI | None, env: LeadQualEnv) -> Action:
