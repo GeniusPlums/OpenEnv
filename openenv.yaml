@@ -1,13 +1,18 @@
 name: LeadQualEnv
-version: 2.0.0
+version: 2.1.0
 entrypoint: leadqualenv.environment.env:LeadQualEnv
-description: Deterministic real-estate outbound lead qualification benchmark.
+description: Deterministic real-estate outbound lead qualification benchmark with adversarial verification tasks.
 metadata:
+  domain: real_estate_sales
   max_turns: 10
   tasks:
     - easy
     - medium
     - hard
+  task_progression:
+    easy: direct qualification
+    medium: nurture vs qualify ambiguity
+    hard: misleading surface signals that require verification
   decision_labels:
     - qualified
     - nurture

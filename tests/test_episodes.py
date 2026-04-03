@@ -34,11 +34,51 @@ def test_hard_episode_requires_verification_to_overwrite_surface_signal():
     env.step(Action(message="When are you planning to move, specifically?"))
     env.step(Action(message="What budget range are you looking at exactly?"))
 
-    assert env.known_signals[SignalKey.TIMELINE] == "immediate"
-    assert env.known_signals[SignalKey.BUDGET] == "high"
+    assert env.known_signals[SignalKey.TIMELINE] == env.profile.surface_timeline
+    assert env.known_signals[SignalKey.BUDGET] == env.profile.surface_budget
 
     env.step(Action(message="To confirm, you said you could stretch. What budget level are you really targeting?"))
     env.step(Action(message="Just to verify, you mentioned moving quickly earlier. What is your actual timeline?"))
 
-    assert env.known_signals[SignalKey.BUDGET] == "low"
-    assert env.known_signals[SignalKey.TIMELINE] == "6+ months"
+    assert env.known_signals[SignalKey.BUDGET] == env.profile.budget
+    assert env.known_signals[SignalKey.TIMELINE] == env.profile.timeline
+
+
+def test_state_reports_current_progress():
+    env = LeadQualEnv(TaskLevel.EASY)
+    env.reset(seed=0)
+
+    state = env.state()
+    assert state.task == TaskLevel.EASY
+    assert state.turn_number == 0
+    assert state.done is False
+
+    env.step(Action(message="Are you the person who can make the purchase decision yourself?"))
+    state = env.state()
+    assert state.turn_number == 1
+    assert state.known_signals[SignalKey.DECISION_MAKER] is True
+
+
+def test_hard_verification_probe_is_rewarded_without_repeat_penalty():
+    env = LeadQualEnv(TaskLevel.HARD)
+    env.reset(seed=0)
+
+    env.step(Action(message="Are you the person who can make the purchase decision yourself?"))
+    env.step(Action(message="When are you planning to move, specifically?"))
+    env.step(Action(message="What budget range are you looking at exactly?"))
+    result = env.step(Action(message="Just to verify, you mentioned moving quickly earlier. What is your actual timeline?"))
+
+    assert result.reward == 0.06
+
+
+def test_terminal_decision_returns_task_score():
+    env = LeadQualEnv(TaskLevel.EASY)
+    env.reset(seed=0)
+
+    env.step(Action(message="Are you the person who can make the purchase decision yourself?"))
+    env.step(Action(message="When are you planning to move, specifically?"))
+    env.step(Action(message="What budget range are you looking at exactly?"))
+    result = env.step(Action(decision=Decision.QUALIFIED))
+
+    assert result.info["task_score"] == 0.98
+    assert "task_score_components" in result.info

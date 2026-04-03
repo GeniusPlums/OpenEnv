@@ -6,6 +6,7 @@ from .grader import classify_lead, classify_probe, is_generic_opener
 from .models import (
     Action,
     Decision,
+    EnvironmentState,
     InsufficientSignalsError,
     InvalidActionError,
     Observation,
@@ -23,6 +24,7 @@ from .reward import (
     turn_reward,
 )
 from .simulator import generate_response
+from .task_graders import grade_episode
 
 
 class LeadQualEnv:
@@ -53,6 +55,17 @@ class LeadQualEnv:
         ]
         return self._observation()
 
+    def state(self) -> EnvironmentState:
+        return EnvironmentState(
+            task=self.task,
+            turn_number=self.turn_number,
+            max_turns=self.max_turns,
+            done=self.done,
+            conversation_history=list(self.conversation_history),
+            known_signals=dict(self.known_signals),
+            probe_log=list(self.probe_log),
+        )
+
     def _observation(self) -> Observation:
         return Observation(
             conversation_history=list(self.conversation_history),
@@ -82,7 +95,7 @@ class LeadQualEnv:
 
         if probe.signal is not None:
             recent_signals = [signal for signal, _ in self.probe_log[-2:]]
-            if probe.signal in recent_signals:
+            if probe.signal in recent_signals and probe.quality != ProbeQuality.VERIFIED:
                 reward += REPEATED_QUESTION_PENALTY
 
         self.conversation_history.append({"role": "assistant", "content": message})
@@ -129,6 +142,12 @@ class LeadQualEnv:
 
         correct = decision == classify_lead(self.profile)
         reward = episode_end_reward(correct, self.turn_number)
+        grade = grade_episode(
+            task=self.task,
+            known_signals=self.known_signals,
+            probe_log=self.probe_log,
+            correct_decision=correct,
+        )
         self.done = True
         return StepResult(
             observation=self._observation(),
@@ -138,5 +157,7 @@ class LeadQualEnv:
                 "correct_decision": correct,
                 "expected_decision": classify_lead(self.profile).value,
                 "profile": asdict(self.profile),
+                "task_score": grade.score,
+                "task_score_components": grade.components,
             },
         )

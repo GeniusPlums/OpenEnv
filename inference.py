@@ -13,7 +13,7 @@ from leadqualenv.environment.grader import classify_lead
 
 API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
 MODEL_NAME = os.getenv("MODEL_NAME", "meta-llama/Meta-Llama-3.1-70B-Instruct")
-HF_TOKEN = os.getenv("HF_TOKEN")
+HF_TOKEN = os.getenv("HF_TOKEN") or os.getenv("OPENAI_API_KEY")
 LOCAL_IMAGE_NAME = os.getenv("LOCAL_IMAGE_NAME")
 BENCHMARK = os.getenv("LEADQUALENV_BENCHMARK", "leadqualenv")
 MAX_STEPS = int(os.getenv("LEADQUALENV_MAX_STEPS", "10"))
@@ -178,7 +178,10 @@ def main() -> list[EpisodeResult]:
     requested_task = os.getenv("LEADQUALENV_TASK")
 
     if requested_task:
-        items = [(requested_task, TASKS[requested_task])]
+        task = TASKS.get(requested_task)
+        if task is None:
+            raise ValueError(f"Unknown task {requested_task!r}. Expected one of: {', '.join(TASKS)}")
+        items = [(requested_task, task)]
     else:
         items = list(TASKS.items())
 

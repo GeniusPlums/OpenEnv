@@ -96,3 +96,14 @@ class StepResult:
     reward: float
     done: bool
     info: dict[str, object] = field(default_factory=dict)
+
+
+@dataclass
+class EnvironmentState:
+    task: TaskLevel
+    turn_number: int
+    max_turns: int
+    done: bool
+    conversation_history: list[dict[str, str]]
+    known_signals: dict[SignalKey, Optional[str | bool]]
+    probe_log: list[tuple[SignalKey, ProbeQuality]]

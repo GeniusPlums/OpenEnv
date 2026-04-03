@@ -1,46 +1,55 @@
-# LeadQualEnv v2
+# LeadQualEnv
 
-LeadQualEnv is an OpenEnv environment for outbound lead qualification in real estate sales. The agent acts like an SDR, probes for key signals, and decides whether the lead is `qualified`, `nurture`, or `unqualified`.
+LeadQualEnv is an OpenEnv benchmark for outbound real-estate lead qualification. The agent acts like an SDR who has to uncover budget, timeline, and decision authority before deciding whether a lead should be marked `qualified`, `nurture`, or `unqualified`.
 
-## Design goals
+The benchmark is designed to be useful for both RL training and agent evaluation:
 
-- Deterministic grading with a single source of truth for lead classification.
-- Dense reward shaping around probe quality, not just final accuracy.
-- Adversarial hard-mode behavior where surface signals can be misleading until verified.
+- it models a real sales workflow that teams already run today
+- it gives dense trajectory rewards instead of only terminal pass/fail
+- it includes adversarial hard-mode behavior where surface answers can be misleading until the agent verifies them
+- it exposes deterministic, task-level graders that score every run in the `0.0` to `1.0` range
 
-## Why This Is Real
+## Why This Environment Matters
 
-Real estate teams spend expensive human SDR time qualifying leads that often never convert. This environment models a real qualification workflow with budget, timeline, decision authority, and motivation signals, then rewards agents for reaching the right sales decision efficiently and safely.
+Lead qualification is expensive, repetitive, and high leverage. Human SDRs routinely need to identify whether a buyer has the authority, urgency, and budget to justify a sales follow-up. Agents that can do this reliably are useful in real businesses, and the benchmark captures several realistic failure modes:
+
+- deciding too early with incomplete information
+- asking vague or repetitive questions
+- over-weighting exciting surface signals
+- failing to verify contradictory cues before routing the lead
+
+## Environment API
+
+The core environment is implemented in [`leadqualenv/environment/env.py`](c:/Users/anish/OpenEnv/leadqualenv/environment/env.py) and supports:
+
+- `reset(seed)` to start a clean episode
+- `step(action)` to send a message or make a terminal decision
+- `state()` to inspect current internal environment state
+
+The HTTP OpenEnv wrapper is implemented in [`server/leadqualenv_environment.py`](c:/Users/anish/OpenEnv/server/leadqualenv_environment.py) using Pydantic request and response models from [`server/models.py`](c:/Users/anish/OpenEnv/server/models.py).
 
 ## Action Space
 
-Each step accepts exactly one of:
+Each step accepts exactly one of the following actions:
 
 ```python
-{
-  "message": str,
-  "decision": None
-}
+{"message": str, "decision": None}
 ```
 
-or
-
 ```python
-{
-  "message": None,
-  "decision": "qualified" | "nurture" | "unqualified"
-}
+{"message": None, "decision": "qualified" | "nurture" | "unqualified"}
 ```
 
 Rules:
 
 - `message` and `decision` are mutually exclusive
 - a `decision` ends the episode
-- deciding before the required signals are known triggers a penalty
+- deciding before `budget`, `timeline`, and `decision_maker` are known ends the episode with a penalty
+- invalid or low-value probing is penalized
 
 ## Observation Space
 
-The environment returns:
+Each observation contains:
 
 ```python
 {
@@ -57,54 +66,76 @@ The environment returns:
 }
 ```
 
-## Tasks
+The environment also exposes `state()` for full internal state inspection during local evaluation and debugging.
 
-- `easy`: straightforward qualified lead, tests basic extraction and correct qualification
-- `medium`: nurture trap, tests whether the agent avoids over-weighting budget and motivation
-- `hard`: adversarial lead with misleading surface signals, tests verification behavior
+## Task Ladder
 
-All three tasks have deterministic grading and produce scores in the `0.0` to `1.0` range through the agent grader plus shaped trajectory reward.
+LeadQualEnv includes three deterministic tasks with increasing difficulty:
 
-## Agent Graders
+1. `easy`
+Straightforward buyers with direct, truthful answers. This tests basic signal extraction and correct qualification decisions.
 
-Task-level normalized graders are implemented in [task_graders.py](c:/Users/anish/OpenEnv/leadqualenv/environment/task_graders.py). Each task uses fixed weights:
+2. `medium`
+Leads that look attractive on budget or motivation, but should still be routed to `nurture` because the timeline is not immediate. This tests whether the agent avoids over-qualifying.
 
-- `easy`: decision `0.50`, signal coverage `0.30`, probe quality `0.20`
-- `medium`: decision `0.65`, signal coverage `0.20`, probe quality `0.15`
-- `hard`: decision `0.45`, signal coverage `0.15`, probe quality `0.40`
+3. `hard`
+Adversarial profiles where direct probes can reveal misleading surface values for budget and timeline. The agent has to verify suspicious answers before making the final routing decision.
 
-This keeps task scores in the `0.0–1.0` range while the shaped reward continues to provide dense step-by-step learning signal.
+Task profiles live in [`leadqualenv/environment/profiles.py`](c:/Users/anish/OpenEnv/leadqualenv/environment/profiles.py).
 
-## Project structure
+## Reward Design
 
-```text
-leadqualenv/
-├── environment/
-│   ├── env.py
-│   ├── grader.py
-│   ├── models.py
-│   ├── profiles.py
-│   ├── reward.py
-│   └── simulator.py
-└── __init__.py
-tests/
-├── test_classifier.py
-├── test_episodes.py
-├── test_grader.py
-└── test_simulator.py
-```
+Reward shaping is implemented in [`leadqualenv/environment/reward.py`](c:/Users/anish/OpenEnv/leadqualenv/environment/reward.py).
 
-## Quickstart
+Trajectory rewards:
 
-```bash
-python -m pip install -e .[dev]
-pytest
-python inference.py
-```
+- `+0.05` for a direct, useful probe
+- `+0.06` for a verification probe
+- `-0.03` for vague probing
+- `-0.05` for irrelevant probing
+- `-0.05` for repeated direct probing of the same signal
+- `-0.30` for making a decision before the required signals are known
+- `-0.20` for hitting the turn limit without deciding
 
-## Required Inference Variables
+Terminal rewards:
 
-The competition runner expects these variables:
+- correct decision reward with timing bonus
+- incorrect decision penalty
+
+This produces meaningful learning signal over the full trajectory while still aligning with the final objective.
+
+## Task Graders
+
+Task-level graders are implemented in [`leadqualenv/environment/task_graders.py`](c:/Users/anish/OpenEnv/leadqualenv/environment/task_graders.py). All graders are deterministic and return normalized scores in `[0.0, 1.0]`.
+
+Scoring components used across tasks:
+
+- `correct_decision`
+- `signal_coverage`
+- `probe_quality`
+- `efficiency`
+- `verification`
+
+Per-task weights:
+
+- `easy`: decision `0.50`, coverage `0.30`, probe quality `0.10`, efficiency `0.10`
+- `medium`: decision `0.55`, coverage `0.20`, probe quality `0.15`, efficiency `0.10`
+- `hard`: decision `0.45`, coverage `0.15`, probe quality `0.20`, verification `0.20`
+
+This lets the environment reward partial progress while still clearly separating weak, decent, and strong trajectories.
+
+## Baseline Inference
+
+The required inference entrypoint is [`inference.py`](c:/Users/anish/OpenEnv/inference.py). It:
+
+- uses the OpenAI Python client for all model calls
+- reads credentials from `HF_TOKEN` or `OPENAI_API_KEY`
+- reads endpoint configuration from `API_BASE_URL`
+- reads the model id from `MODEL_NAME`
+- emits required `[START]`, `[STEP]`, and `[END]` logs
+- falls back to a deterministic local policy if the model output is invalid or unavailable
+
+Required environment variables:
 
 ```bash
 set API_BASE_URL=https://router.huggingface.co/v1
@@ -112,43 +143,15 @@ set MODEL_NAME=meta-llama/Meta-Llama-3.1-70B-Instruct
 set HF_TOKEN=your_hugging_face_or_router_token
 ```
 
-Optional:
+Optional environment variables:
 
 ```bash
+set OPENAI_API_KEY=your_openai_compatible_token
 set LEADQUALENV_TASK=easy
 set LEADQUALENV_SEED=0
 set LEADQUALENV_MAX_STEPS=10
 set LEADQUALENV_BENCHMARK=leadqualenv
 ```
-
-`inference.py` uses the OpenAI Python client with `API_BASE_URL`, `MODEL_NAME`, and `HF_TOKEN`, and emits the required `[START]`, `[STEP]`, and `[END]` stdout lines.
-
-## Meta Llama paraphrase mode
-
-The environment keeps grading deterministic even when the response surface is LLM-backed. Only the canonical rule-layer value is written to `known_signals`; the LLM output is display-only.
-
-Set these environment variables to use Groq-hosted Meta Llama for the paraphrase layer:
-
-```bash
-set GROQ_API_KEY=your_key_here
-set LEADQUALENV_USE_LLM=1
-set GROQ_MODEL=meta-llama/llama-4-scout-17b-16e-instruct
-python inference.py
-```
-
-If the API call fails or the variables are unset, the simulator falls back to deterministic local templates.
-
-## Docker
-
-```bash
-docker build -t leadqualenv .
-docker run --rm -p 7860:7860 leadqualenv
-docker run --rm -e GROQ_API_KEY=your_key_here -e LEADQUALENV_USE_LLM=1 leadqualenv
-```
-
-The repository includes both a root [Dockerfile](c:/Users/anish/OpenEnv/Dockerfile) and a mirrored [server/Dockerfile](c:/Users/anish/OpenEnv/server/Dockerfile). This matches the OpenEnv validator's expected layout and ensures either repo-root or `server/`-based builds can succeed.
-
-## Baseline Inference
 
 Run:
 
@@ -158,23 +161,65 @@ python inference.py
 
 Current reproducible baseline with seed `0`:
 
-- `easy`: success in 4 steps, rewards `0.05,0.05,0.05,0.70`
-- `medium`: success in 4 steps, rewards `0.05,0.05,0.05,0.70`
-- `hard`: success in 6 steps, rewards `0.05,0.05,0.05,-0.02,-0.02,0.70`
+- `easy`: success in `4` steps, score `0.980`, rewards `0.05,0.05,0.05,0.70`
+- `medium`: success in `4` steps, score `0.970`, rewards `0.05,0.05,0.05,0.70`
+- `hard`: success in `6` steps, score `0.909`, rewards `0.05,0.05,0.05,0.06,0.06,0.70`
 
-The script uses the model response when it is valid JSON, and otherwise falls back to the deterministic baseline policy. That keeps the submission reproducible while still satisfying the OpenAI-client requirement in the competition instructions.
+## Setup
 
-## Environment contract
+Install locally:
 
-- Max turns: `10`
-- Required signals before decision: `budget`, `timeline`, `decision_maker`
-- Invalid actions:
-  - both `message` and `decision`
-  - neither `message` nor `decision`
-- Hard mode:
-  - direct probes may return misleading surface values
-  - verified probes always return the true values
+```bash
+python -m pip install -e .[dev]
+python -m pytest
+python inference.py
+```
 
-## Notes
+OpenEnv validation:
 
-The paraphrase layer is implemented as deterministic templates so the repo remains fully reproducible out of the box. If you later swap in an LLM wrapper for richer utterances, keep the current invariant: the grader must only read canonical rule-layer values from `known_signals`.
+```bash
+openenv validate
+```
+
+Validator helper script:
+
+```bash
+bash scripts/validate-submission.sh <space-url>
+```
+
+## Docker and Hugging Face Spaces
+
+The repository includes both a root [`Dockerfile`](c:/Users/anish/OpenEnv/Dockerfile) and a mirrored [`server/Dockerfile`](c:/Users/anish/OpenEnv/server/Dockerfile). This supports both repo-root and `server/`-based validation flows.
+
+Build and run locally:
+
+```bash
+docker build -t leadqualenv .
+docker run --rm -p 7860:7860 leadqualenv
+```
+
+The Space should be tagged with `openenv` and expose the HTTP environment from [`server/app.py`](c:/Users/anish/OpenEnv/server/app.py).
+
+## Project Structure
+
+```text
+leadqualenv/
+|-- environment/
+|   |-- env.py
+|   |-- grader.py
+|   |-- models.py
+|   |-- profiles.py
+|   |-- reward.py
+|   |-- simulator.py
+|   `-- task_graders.py
+server/
+|-- app.py
+|-- leadqualenv_environment.py
+`-- models.py
+tests/
+|-- test_classifier.py
+|-- test_episodes.py
+|-- test_grader.py
+|-- test_simulator.py
+`-- test_task_graders.py
+```

@@ -5,7 +5,7 @@ from .models import Decision, ProbeQuality
 
 TURN_REWARDS = {
     ProbeQuality.DIRECT: 0.05,
-    ProbeQuality.VERIFIED: 0.03,
+    ProbeQuality.VERIFIED: 0.06,
     ProbeQuality.VAGUE: -0.03,
     ProbeQuality.IRRELEVANT: -0.05,
 }

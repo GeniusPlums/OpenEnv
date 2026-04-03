@@ -2,6 +2,7 @@ from .env import LeadQualEnv
 from .models import (
     Action,
     Decision,
+    EnvironmentState,
     InsufficientSignalsError,
     InvalidActionError,
     LeadProfile,
@@ -15,6 +16,7 @@ from .task_graders import TaskGrade, grade_episode
 __all__ = [
     "Action",
     "Decision",
+    "EnvironmentState",
     "InsufficientSignalsError",
     "InvalidActionError",
     "LeadProfile",
