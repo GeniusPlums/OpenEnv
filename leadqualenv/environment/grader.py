@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 
 from .models import Decision, ProbeQuality, SignalKey
 
@@ -44,6 +45,15 @@ GENERIC_OPENERS = [
     "nice to meet you",
 ]
 
+QUESTION_HINTS = [
+    "what",
+    "when",
+    "which",
+    "who",
+    "how much",
+    "how soon",
+]
+
 
 @dataclass(frozen=True)
 class ProbeResult:
@@ -67,13 +77,12 @@ def classify_lead(profile) -> Decision:
 def detect_signal_keyword(message: str) -> SignalKey | None:
     lowered = message.lower()
     for signal, keywords in SIGNAL_KEYWORDS.items():
-        if any(keyword in lowered for keyword in keywords):
+        if any(re.search(rf"\b{re.escape(keyword)}\b", lowered) for keyword in keywords):
             return signal
     return None
 
 
 def classify_probe(message: str, known_signals: dict[SignalKey, object | None]) -> ProbeResult:
-    del known_signals
     if is_generic_opener(message):
         return ProbeResult(ProbeQuality.IRRELEVANT, None)
 
@@ -82,9 +91,21 @@ def classify_probe(message: str, known_signals: dict[SignalKey, object | None]) 
         return ProbeResult(ProbeQuality.IRRELEVANT, None)
 
     lowered = message.lower()
-    if any(marker in lowered for marker in VERIFIED_MARKERS):
+    already_known = known_signals.get(signal) is not None
+    if any(marker in lowered for marker in VERIFIED_MARKERS) and already_known:
         return ProbeResult(ProbeQuality.VERIFIED, signal)
+
     if any(marker in lowered for marker in DIRECT_MARKERS):
+        return ProbeResult(ProbeQuality.VAGUE if already_known else ProbeQuality.DIRECT, signal)
+
+    has_question_shape = "?" in message or any(hint in lowered for hint in QUESTION_HINTS)
+    if has_question_shape:
+        return ProbeResult(ProbeQuality.VAGUE if already_known else ProbeQuality.DIRECT, signal)
+
+    if already_known:
+        return ProbeResult(ProbeQuality.IRRELEVANT, signal)
+
+    if any(keyword in lowered for keyword in ("range", "budget", "timeline", "authority", "investment")):
         return ProbeResult(ProbeQuality.DIRECT, signal)
     return ProbeResult(ProbeQuality.VAGUE, signal)
 

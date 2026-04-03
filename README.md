@@ -46,6 +46,7 @@ Rules:
 - a `decision` ends the episode
 - deciding before `budget`, `timeline`, and `decision_maker` are known ends the episode with a penalty
 - invalid or low-value probing is penalized
+- re-asking for already known facts without a verification cue is penalized harder than a first-pass question
 
 ## Observation Space
 
@@ -93,7 +94,8 @@ Trajectory rewards:
 - `+0.06` for a verification probe
 - `-0.03` for vague probing
 - `-0.05` for irrelevant probing
-- `-0.05` for repeated direct probing of the same signal
+- `-0.05` for re-asking about an already known signal without verification language
+- `-0.025` for tight-loop repetition over the last few turns
 - `-0.30` for making a decision before the required signals are known
 - `-0.20` for hitting the turn limit without deciding
 
@@ -189,7 +191,7 @@ bash scripts/validate-submission.sh <space-url>
 
 ## Docker and Hugging Face Spaces
 
-The repository includes both a root [`Dockerfile`](c:/Users/anish/OpenEnv/Dockerfile) and a mirrored [`server/Dockerfile`](c:/Users/anish/OpenEnv/server/Dockerfile). This supports both repo-root and `server/`-based validation flows.
+The repository includes both a root [`Dockerfile`](c:/Users/anish/OpenEnv/Dockerfile) and a mirrored [`server/Dockerfile`](c:/Users/anish/OpenEnv/server/Dockerfile). They share the same single-pass `uv sync` build flow so local validation and Space deployment stay aligned.
 
 Build and run locally:
 

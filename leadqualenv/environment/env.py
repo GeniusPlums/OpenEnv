@@ -94,9 +94,11 @@ class LeadQualEnv:
             reward = min(reward, -0.05)
 
         if probe.signal is not None:
-            recent_signals = [signal for signal, _ in self.probe_log[-2:]]
-            if probe.signal in recent_signals and probe.quality != ProbeQuality.VERIFIED:
+            if self.known_signals[probe.signal] is not None and probe.quality != ProbeQuality.VERIFIED:
                 reward += REPEATED_QUESTION_PENALTY
+            recent_signals = [signal for signal, _ in self.probe_log[-3:]]
+            if probe.signal in recent_signals and probe.quality != ProbeQuality.VERIFIED:
+                reward += REPEATED_QUESTION_PENALTY * 0.5
 
         self.conversation_history.append({"role": "assistant", "content": message})
 

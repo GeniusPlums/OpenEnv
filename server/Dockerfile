@@ -8,10 +8,7 @@ COPY leadqualenv /app/env/leadqualenv
 COPY server /app/env/server
 
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-install-project --no-editable
-
-RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-editable
+    uv sync --frozen --no-editable --link-mode=copy
 
 FROM ${BASE_IMAGE}
 
