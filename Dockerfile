@@ -7,6 +7,8 @@ WORKDIR /app/env
 COPY pyproject.toml uv.lock openenv.yaml README.md /app/env/
 COPY leadqualenv /app/env/leadqualenv
 COPY server /app/env/server
+COPY inference.py /app/env/inference.py
+COPY tests /app/env/tests
 
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-editable --link-mode=copy

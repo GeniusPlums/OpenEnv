@@ -1,52 +1,73 @@
+---
+title: LeadQualEnv
+colorFrom: blue
+colorTo: green
+sdk: docker
+app_port: 7860
+tags:
+  - openenv
+  - rl-environment
+  - sales
+---
+
 # LeadQualEnv
 
-LeadQualEnv is an OpenEnv benchmark for outbound real-estate lead qualification. The agent acts like an SDR who has to uncover budget, timeline, and decision authority before deciding whether a lead should be marked `qualified`, `nurture`, or `unqualified`.
+**A deterministic OpenEnv benchmark for outbound real-estate lead qualification.**
 
-The benchmark is designed to be useful for both RL training and agent evaluation:
+An AI agent acts as a Sales Development Representative (SDR) who must uncover a prospective buyer's budget, timeline, and decision authority before routing the lead as `qualified`, `nurture`, or `unqualified`.
 
-- it models a real sales workflow that teams already run today
-- it gives dense trajectory rewards instead of only terminal pass/fail
-- it includes adversarial hard-mode behavior where surface answers can be misleading until the agent verifies them
-- it exposes deterministic, task-level graders that score every run in the `0.0` to `1.0` range
+---
 
 ## Why This Environment Matters
 
-Lead qualification is expensive, repetitive, and high leverage. Human SDRs routinely need to identify whether a buyer has the authority, urgency, and budget to justify a sales follow-up. Agents that can do this reliably are useful in real businesses, and the benchmark captures several realistic failure modes:
+Lead qualification is expensive, repetitive, and high-leverage. Human SDRs routinely assess whether a buyer has the authority, urgency, and budget to justify a sales follow-up. Agents that can do this reliably are immediately useful in real businesses.
 
-- deciding too early with incomplete information
-- asking vague or repetitive questions
-- over-weighting exciting surface signals
-- failing to verify contradictory cues before routing the lead
+This benchmark captures several realistic failure modes:
+
+- Deciding too early with incomplete information
+- Asking vague or repetitive questions
+- Over-weighting exciting surface signals (e.g. a lead claiming high budget when they actually have low)
+- Failing to verify contradictory cues before routing
+- Losing engagement by asking too many questions (lead temperature decay)
+
+The environment is designed for both RL training and agent evaluation with dense trajectory rewards, personality-driven buyer responses, adversarial hard-mode profiles, and deterministic graders.
+
+---
 
 ## Environment API
 
-The core environment is implemented in [`leadqualenv/environment/env.py`](c:/Users/anish/OpenEnv/leadqualenv/environment/env.py) and supports:
+The core environment is implemented in [`leadqualenv/environment/env.py`](leadqualenv/environment/env.py) and supports:
 
-- `reset(seed)` to start a clean episode
-- `step(action)` to send a message or make a terminal decision
-- `state()` to inspect current internal environment state
+- `reset(seed)` — start a clean episode, returns initial observation
+- `step(action)` — send a message or make a terminal decision, returns observation + reward + done + info
+- `state()` — inspect full internal environment state
 
-The HTTP OpenEnv wrapper is implemented in [`server/leadqualenv_environment.py`](c:/Users/anish/OpenEnv/server/leadqualenv_environment.py) using Pydantic request and response models from [`server/models.py`](c:/Users/anish/OpenEnv/server/models.py).
+The HTTP OpenEnv wrapper is in [`server/leadqualenv_environment.py`](server/leadqualenv_environment.py) using Pydantic models from [`server/models.py`](server/models.py).
+
+---
 
 ## Action Space
 
-Each step accepts exactly one of the following actions:
+Each step accepts exactly one of:
 
 ```python
-{"message": str, "decision": None}
+{"message": "<question to ask the buyer>", "decision": null}
 ```
 
 ```python
-{"message": None, "decision": "qualified" | "nurture" | "unqualified"}
+{"message": null, "decision": "qualified" | "nurture" | "unqualified"}
 ```
 
 Rules:
 
 - `message` and `decision` are mutually exclusive
-- a `decision` ends the episode
-- deciding before `budget`, `timeline`, and `decision_maker` are known ends the episode with a penalty
-- invalid or low-value probing is penalized
-- re-asking for already known facts without a verification cue is penalized harder than a first-pass question
+- A `decision` ends the episode
+- Deciding before `budget`, `timeline`, and `decision_maker` are known ends with a penalty
+- Vague or irrelevant probing is penalized
+- Re-asking about known signals without verification language is penalized
+- Generic openers ("tell me about yourself") are penalized
+
+---
 
 ## Observation Space
 
@@ -54,90 +75,118 @@ Each observation contains:
 
 ```python
 {
-  "conversation_history": [{"role": str, "content": str}, ...],
-  "known_signals": {
-    "budget": "low" | "medium" | "high" | None,
-    "timeline": "immediate" | "3-6 months" | "6+ months" | None,
-    "decision_maker": bool | None,
-    "motivation": "self_use" | "investment" | "exploring" | None,
-  },
-  "probe_log": [[signal, quality], ...],
-  "turn_number": int,
-  "max_turns": int,
+    "conversation_history": [{"role": str, "content": str}, ...],
+    "known_signals": {
+        "budget": "low" | "medium" | "high" | None,
+        "timeline": "immediate" | "3-6 months" | "6+ months" | None,
+        "decision_maker": bool | None,
+        "motivation": "self_use" | "investment" | "exploring" | None,
+    },
+    "probe_log": [[signal, quality], ...],
+    "turn_number": int,
+    "max_turns": int,
+    "lead_temperature": float,          # 1.0 → 0.0, decays each turn
+    "qualification_confidence": float,   # 0.0 → 1.0, rises as signals are uncovered
+    "property_context": str,             # e.g. "apartment in downtown"
 }
 ```
 
-The environment also exposes `state()` for full internal state inspection during local evaluation and debugging.
+**Lead temperature** simulates real-world lead cooling — the longer you take, the less engaged the buyer becomes. This creates natural urgency without artificial time limits.
+
+**Qualification confidence** gives the agent a running estimate of how much information it has gathered, encouraging complete signal coverage before deciding.
+
+---
 
 ## Task Ladder
 
 LeadQualEnv includes three deterministic tasks with increasing difficulty:
 
-1. `easy`
-Straightforward buyers with direct, truthful answers. This tests basic signal extraction and correct qualification decisions.
+### Easy
+Straightforward buyers with direct, truthful answers and clear qualifying signals (immediate timeline, medium/high budget, decision maker). Tests basic signal extraction and correct qualification logic. Correct answer is always `qualified`.
 
-2. `medium`
-Leads that look attractive on budget or motivation, but should still be routed to `nurture` because the timeline is not immediate. This tests whether the agent avoids over-qualifying.
+### Medium
+Leads that look attractive on budget or motivation but should be routed to `nurture` because the timeline is 3–6 months. Tests whether the agent avoids over-qualifying. Some leads have evasive personalities.
 
-3. `hard`
-Adversarial profiles where direct probes can reveal misleading surface values for budget and timeline. The agent has to verify suspicious answers before making the final routing decision.
+### Hard
+Adversarial profiles where direct probes reveal **misleading surface values** for budget and/or timeline. The agent must use verification probes to uncover true signals before routing. Correct answers vary across `qualified`, `nurture`, and `unqualified` depending on the profile. Additional mechanics:
 
-Task profiles live in [`leadqualenv/environment/profiles.py`](c:/Users/anish/OpenEnv/leadqualenv/environment/profiles.py).
+- **Competitor pressure** — Some leads mention shopping with other agents, creating urgency
+- **Objection handling** — Some leads push back on certain questions, blocking the first probe
+- **Surface signal traps** — Some surface signals match reality (requiring the agent to verify anyway), while others are partially misleading (only budget or only timeline is fake)
+
+Task profiles live in [`leadqualenv/environment/profiles.py`](leadqualenv/environment/profiles.py) — 10+ profiles per difficulty level with diverse personalities, property types, and locations.
+
+---
 
 ## Reward Design
 
-Reward shaping is implemented in [`leadqualenv/environment/reward.py`](c:/Users/anish/OpenEnv/leadqualenv/environment/reward.py).
+Reward shaping is implemented in [`leadqualenv/environment/reward.py`](leadqualenv/environment/reward.py).
 
-Trajectory rewards:
+**Trajectory rewards:**
 
-- `+0.05` for a direct, useful probe
-- `+0.06` for a verification probe
-- `-0.03` for vague probing
-- `-0.05` for irrelevant probing
-- `-0.05` for re-asking about an already known signal without verification language
-- `-0.025` for tight-loop repetition over the last few turns
-- `-0.30` for making a decision before the required signals are known
-- `-0.20` for hitting the turn limit without deciding
+| Signal | Reward |
+|--------|--------|
+| Direct, useful probe | `+0.05` |
+| Verification probe | `+0.06` |
+| Motivation discovery | `+0.02` |
+| Vague probing | `-0.03` |
+| Irrelevant probing | `-0.05` |
+| Re-asking known signal (tight-loop) | `-0.05` |
+| Re-asking known signal (non-loop) | `-0.025` |
+| Cold lead penalty (per turn > 6) | `-0.015/turn` |
+| No decision at turn limit | `-0.20` |
+| Decision with insufficient signals | `-0.30` |
 
-Terminal rewards:
+**Terminal rewards:**
 
-- correct decision reward with timing bonus
-- incorrect decision penalty
+| Outcome | Base | Timing Bonus (turns 3–5) | Decay Bonus |
+|---------|------|--------------------------|-------------|
+| Correct decision | `+0.50` | `+0.15` | up to `+0.10` |
+| Incorrect decision | `-0.40` | — | — |
 
-This produces meaningful learning signal over the full trajectory while still aligning with the final objective.
+This produces meaningful learning signal over the full trajectory while aligning with the final objective. The cold lead penalty and timing curve ensure agents learn to be efficient without being reckless.
+
+---
 
 ## Task Graders
 
-Task-level graders are implemented in [`leadqualenv/environment/task_graders.py`](c:/Users/anish/OpenEnv/leadqualenv/environment/task_graders.py). All graders are deterministic and return normalized scores in `[0.0, 1.0]`.
+Task-level graders in [`leadqualenv/environment/task_graders.py`](leadqualenv/environment/task_graders.py) are deterministic and return normalized scores in `[0.0, 1.0]`.
 
-Scoring components used across tasks:
+Scoring components:
 
-- `correct_decision`
-- `signal_coverage`
-- `probe_quality`
-- `efficiency`
-- `verification`
+| Component | Description |
+|-----------|-------------|
+| `correct_decision` | 1.0 if correct, 0.0 if wrong |
+| `signal_coverage` | Proportion of signals uncovered (required + motivation bonus) |
+| `probe_quality` | Average quality of probes (irrelevant=0, vague=0.2, direct=0.8, verified=1.0) |
+| `verification` | Proportion of required signals that were verified |
+| `efficiency` | Penalizes excessive probing beyond expected count |
 
 Per-task weights:
 
-- `easy`: decision `0.50`, coverage `0.30`, probe quality `0.10`, efficiency `0.10`
-- `medium`: decision `0.55`, coverage `0.20`, probe quality `0.15`, efficiency `0.10`
-- `hard`: decision `0.45`, coverage `0.15`, probe quality `0.20`, verification `0.20`
+| Task | Decision | Coverage | Quality | Verification | Efficiency |
+|------|----------|----------|---------|--------------|------------|
+| Easy | 0.45 | 0.25 | 0.15 | — | 0.15 |
+| Medium | 0.45 | 0.20 | 0.15 | 0.10 | 0.10 |
+| Hard | 0.35 | 0.10 | 0.15 | **0.30** | 0.10 |
 
-This lets the environment reward partial progress while still clearly separating weak, decent, and strong trajectories.
+Hard mode weights verification at **30%** — an agent that skips verification will score significantly lower even with a correct decision.
+
+---
 
 ## Baseline Inference
 
-The required inference entrypoint is [`inference.py`](c:/Users/anish/OpenEnv/inference.py). It:
+The inference entrypoint is [`inference.py`](inference.py). It:
 
-- uses the OpenAI Python client for all model calls
-- reads credentials from `HF_TOKEN` or `OPENAI_API_KEY`
-- reads endpoint configuration from `API_BASE_URL`
-- reads the model id from `MODEL_NAME`
-- emits required `[START]`, `[STEP]`, and `[END]` logs
-- falls back to a deterministic local policy if the model output is invalid or unavailable
+- Uses the OpenAI Python client for all model calls
+- Reads credentials from `HF_TOKEN` or `OPENAI_API_KEY`
+- Reads endpoint configuration from `API_BASE_URL` and `MODEL_NAME`
+- Emits required `[START]`, `[STEP]`, and `[END]` logs with `score=` field
+- Falls back to a deterministic policy if the model output is invalid or unavailable
+- Strips markdown-wrapped JSON from LLM responses
+- Applies a 15-second timeout on API calls and a 15-minute global runtime cap
 
-Required environment variables:
+### Required Environment Variables
 
 ```bash
 set API_BASE_URL=https://router.huggingface.co/v1
@@ -145,7 +194,7 @@ set MODEL_NAME=meta-llama/Meta-Llama-3.1-70B-Instruct
 set HF_TOKEN=your_hugging_face_or_router_token
 ```
 
-Optional environment variables:
+### Optional Environment Variables
 
 ```bash
 set OPENAI_API_KEY=your_openai_compatible_token
@@ -155,21 +204,53 @@ set LEADQUALENV_MAX_STEPS=10
 set LEADQUALENV_BENCHMARK=leadqualenv
 ```
 
-Run:
+### Run
 
 ```bash
 python inference.py
 ```
 
-Current reproducible baseline with seed `0`:
+### Reproducible Baseline Scores (seed=0, deterministic fallback)
 
-- `easy`: success in `4` steps, score `0.980`, rewards `0.05,0.05,0.05,0.70`
-- `medium`: success in `4` steps, score `0.970`, rewards `0.05,0.05,0.05,0.70`
-- `hard`: success in `6` steps, score `0.909`, rewards `0.05,0.05,0.05,0.06,0.06,0.70`
+| Task | Steps | Score | Rewards |
+|------|-------|-------|---------|
+| Easy | 5 | **0.989** | `0.05, 0.05, 0.05, 0.07, 0.73` |
+| Medium | 5 | **0.922** | `0.05, 0.05, 0.05, 0.07, 0.73` |
+| Hard | 7 | **0.887** | `0.05, 0.05, 0.05, 0.07, 0.06, 0.04, 0.59` |
+
+---
+
+## Example Conversation (Easy Task)
+
+```
+[system] You are qualifying a prospective real estate buyer.
+[buyer]  Hi, I saw your apartment listing and wanted to learn more.
+
+[agent]  Are you the person who can make the purchase decision yourself?
+[buyer]  I can make the purchase decision myself.
+         → signal: decision_maker = True, reward: +0.05
+
+[agent]  When are you planning to move or buy, specifically?
+[buyer]  I want to move pretty quickly if something fits.
+         → signal: timeline = immediate, reward: +0.05
+
+[agent]  What budget range are you looking at exactly?
+[buyer]  I have a mid-range budget in mind.
+         → signal: budget = medium, reward: +0.05
+
+[agent]  What is the main purpose for this purchase — own use or investment?
+[buyer]  This would be for my own use.
+         → signal: motivation = self_use, reward: +0.07
+
+[agent]  Decision: qualified
+         → correct! reward: +0.73, task_score: 0.989
+```
+
+---
 
 ## Setup
 
-Install locally:
+### Install Locally
 
 ```bash
 python -m pip install -e .[dev]
@@ -177,51 +258,66 @@ python -m pytest
 python inference.py
 ```
 
-OpenEnv validation:
+### OpenEnv Validation
 
 ```bash
 openenv validate
 ```
 
-Validator helper script:
-
-```bash
-bash scripts/validate-submission.sh <space-url>
-```
+---
 
 ## Docker and Hugging Face Spaces
 
-The repository includes both a root [`Dockerfile`](c:/Users/anish/OpenEnv/Dockerfile) and a mirrored [`server/Dockerfile`](c:/Users/anish/OpenEnv/server/Dockerfile). They share the same single-pass `uv sync` build flow so local validation and Space deployment stay aligned.
+The repository uses the root [`Dockerfile`](Dockerfile) for both local container runs and Hugging Face Spaces deployment.
 
-Build and run locally:
+### Build and Run Locally
 
 ```bash
 docker build -t leadqualenv .
 docker run --rm -p 7860:7860 leadqualenv
 ```
 
-The Space should be tagged with `openenv` and expose the HTTP environment from [`server/app.py`](c:/Users/anish/OpenEnv/server/app.py).
+The HF Space should be tagged with `openenv` and exposes the HTTP environment from [`server/app.py`](server/app.py).
+
+---
 
 ## Project Structure
 
 ```text
 leadqualenv/
-|-- environment/
-|   |-- env.py
-|   |-- grader.py
-|   |-- models.py
-|   |-- profiles.py
-|   |-- reward.py
-|   |-- simulator.py
-|   `-- task_graders.py
+├── environment/
+│   ├── env.py            # Core LeadQualEnv with step/reset/state
+│   ├── grader.py         # Probe classification and lead classification
+│   ├── models.py         # Typed dataclass models (Action, Observation, etc.)
+│   ├── profiles.py       # 32 lead profiles across 3 difficulty levels
+│   ├── reward.py         # Dense reward shaping with timing and decay
+│   ├── simulator.py      # Personality-aware buyer response generation
+│   └── task_graders.py   # Deterministic 0.0–1.0 graders per task
+├── py.typed              # PEP 561 type marker
+└── __init__.py
 server/
-|-- app.py
-|-- leadqualenv_environment.py
-`-- models.py
+├── app.py                # FastAPI/uvicorn HTTP server
+├── leadqualenv_environment.py  # OpenEnv Environment wrapper
+├── models.py             # Pydantic API models
+└── Dockerfile            # Local + HF Spaces deployment
 tests/
-|-- test_classifier.py
-|-- test_episodes.py
-|-- test_grader.py
-|-- test_simulator.py
-`-- test_task_graders.py
+├── test_classifier.py    # Lead classification tests
+├── test_episodes.py      # Full episode integration tests
+├── test_grader.py        # Probe classification tests
+├── test_server_environment.py  # HTTP wrapper tests
+├── test_simulator.py     # Response generation tests
+└── test_task_graders.py  # Grader scoring tests
+inference.py              # Baseline inference script
+openenv.yaml              # OpenEnv metadata
+Dockerfile                # Root container build
+pyproject.toml            # Project configuration
 ```
+
+---
+
+## Limitations
+
+- The probe classifier uses keyword matching — sophisticated rephrasing may not be detected correctly
+- Buyer responses are template-based (with optional LLM paraphrasing via `LEADQUALENV_USE_LLM=1`)
+- The environment is single-threaded and does not support concurrent sessions
+- Profile pool is finite (32 profiles) — sufficient for evaluation but limited for large-scale RL training without augmentation

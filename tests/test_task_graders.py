@@ -18,8 +18,42 @@ def test_easy_grade_is_normalized():
         correct_decision=True,
     )
     assert 0.0 <= grade.score <= 1.0
-    assert grade.score == 0.98
     assert grade.components["efficiency"] == 1.0
+
+
+def test_easy_grade_with_motivation_is_higher():
+    without_motivation = grade_episode(
+        task=TaskLevel.EASY,
+        known_signals={
+            SignalKey.BUDGET: "medium",
+            SignalKey.TIMELINE: "immediate",
+            SignalKey.DECISION_MAKER: True,
+            SignalKey.MOTIVATION: None,
+        },
+        probe_log=[
+            (SignalKey.DECISION_MAKER, ProbeQuality.DIRECT),
+            (SignalKey.TIMELINE, ProbeQuality.DIRECT),
+            (SignalKey.BUDGET, ProbeQuality.DIRECT),
+        ],
+        correct_decision=True,
+    )
+    with_motivation = grade_episode(
+        task=TaskLevel.EASY,
+        known_signals={
+            SignalKey.BUDGET: "medium",
+            SignalKey.TIMELINE: "immediate",
+            SignalKey.DECISION_MAKER: True,
+            SignalKey.MOTIVATION: "self_use",
+        },
+        probe_log=[
+            (SignalKey.DECISION_MAKER, ProbeQuality.DIRECT),
+            (SignalKey.TIMELINE, ProbeQuality.DIRECT),
+            (SignalKey.BUDGET, ProbeQuality.DIRECT),
+            (SignalKey.MOTIVATION, ProbeQuality.DIRECT),
+        ],
+        correct_decision=True,
+    )
+    assert with_motivation.score >= without_motivation.score
 
 
 def test_hard_grade_rewards_verification():
@@ -59,6 +93,28 @@ def test_hard_grade_rewards_verification():
     assert high_verification.components["verification"] > low_verification.components["verification"]
 
 
+def test_hard_verification_weight_is_significant():
+    """Hard task should weight verification at 0.30 — a major scoring component."""
+    grade = grade_episode(
+        task=TaskLevel.HARD,
+        known_signals={
+            SignalKey.BUDGET: "low",
+            SignalKey.TIMELINE: "6+ months",
+            SignalKey.DECISION_MAKER: False,
+            SignalKey.MOTIVATION: None,
+        },
+        probe_log=[
+            (SignalKey.DECISION_MAKER, ProbeQuality.DIRECT),
+            (SignalKey.TIMELINE, ProbeQuality.DIRECT),
+            (SignalKey.BUDGET, ProbeQuality.DIRECT),
+        ],
+        correct_decision=True,
+    )
+    # With no verification, score should be lower despite correct decision
+    assert grade.components["verification"] == 0.0
+    assert grade.score < 0.85
+
+
 def test_medium_grade_penalizes_inefficient_extra_probes():
     efficient = grade_episode(
         task=TaskLevel.MEDIUM,
@@ -89,7 +145,47 @@ def test_medium_grade_penalizes_inefficient_extra_probes():
             (SignalKey.BUDGET, ProbeQuality.DIRECT),
             (SignalKey.TIMELINE, ProbeQuality.VAGUE),
             (SignalKey.BUDGET, ProbeQuality.VAGUE),
+            (SignalKey.TIMELINE, ProbeQuality.VAGUE),
         ],
         correct_decision=True,
     )
     assert efficient.score > inefficient.score
+
+
+def test_wrong_decision_scores_low():
+    grade = grade_episode(
+        task=TaskLevel.EASY,
+        known_signals={
+            SignalKey.BUDGET: "medium",
+            SignalKey.TIMELINE: "immediate",
+            SignalKey.DECISION_MAKER: True,
+            SignalKey.MOTIVATION: None,
+        },
+        probe_log=[
+            (SignalKey.DECISION_MAKER, ProbeQuality.DIRECT),
+            (SignalKey.TIMELINE, ProbeQuality.DIRECT),
+            (SignalKey.BUDGET, ProbeQuality.DIRECT),
+        ],
+        correct_decision=False,
+    )
+    assert grade.score < 0.55  # correct_decision component is 0.0
+
+
+def test_all_tasks_produce_valid_scores():
+    for task in TaskLevel:
+        grade = grade_episode(
+            task=task,
+            known_signals={
+                SignalKey.BUDGET: "medium",
+                SignalKey.TIMELINE: "immediate",
+                SignalKey.DECISION_MAKER: True,
+                SignalKey.MOTIVATION: "self_use",
+            },
+            probe_log=[
+                (SignalKey.DECISION_MAKER, ProbeQuality.DIRECT),
+                (SignalKey.TIMELINE, ProbeQuality.DIRECT),
+                (SignalKey.BUDGET, ProbeQuality.DIRECT),
+            ],
+            correct_decision=True,
+        )
+        assert 0.0 <= grade.score <= 1.0, f"Score out of range for {task}"

@@ -2,27 +2,39 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .models import ProbeQuality, SignalKey, TaskLevel
+from .models import Personality, ProbeQuality, SignalKey, TaskLevel
+
+# Personality difficulty multiplier: harder personalities earn slightly more credit
+PERSONALITY_DIFFICULTY: dict[Personality, float] = {
+    Personality.DIRECT: 1.0,
+    Personality.FRIENDLY: 1.0,
+    Personality.VERBOSE: 1.02,
+    Personality.TERSE: 1.04,
+    Personality.EVASIVE: 1.06,
+}
 
 
 TASK_WEIGHTS: dict[TaskLevel, dict[str, float]] = {
     TaskLevel.EASY: {
-        "correct_decision": 0.50,
-        "signal_coverage": 0.30,
-        "probe_quality": 0.10,
-        "efficiency": 0.10,
+        "correct_decision": 0.45,
+        "signal_coverage": 0.25,
+        "probe_quality": 0.15,
+        "efficiency": 0.15,
     },
     TaskLevel.MEDIUM: {
-        "correct_decision": 0.55,
+        "correct_decision": 0.45,
         "signal_coverage": 0.20,
         "probe_quality": 0.15,
         "efficiency": 0.10,
+        "verification": 0.10,
     },
     TaskLevel.HARD: {
-        "correct_decision": 0.45,
-        "signal_coverage": 0.15,
-        "probe_quality": 0.20,
-        "verification": 0.20,
+        "correct_decision": 0.30,
+        "signal_coverage": 0.10,
+        "probe_quality": 0.10,
+        "verification": 0.35,
+        "efficiency": 0.05,
+        "misleading_detection": 0.10,
     },
 }
 
@@ -30,6 +42,13 @@ REQUIRED_SIGNALS = {
     SignalKey.BUDGET,
     SignalKey.TIMELINE,
     SignalKey.DECISION_MAKER,
+}
+
+ALL_SIGNALS = {
+    SignalKey.BUDGET,
+    SignalKey.TIMELINE,
+    SignalKey.DECISION_MAKER,
+    SignalKey.MOTIVATION,
 }
 
 PROBE_QUALITY_SCORES = {
@@ -52,21 +71,43 @@ def grade_episode(
     known_signals: dict[SignalKey, str | bool | None],
     probe_log: list[tuple[SignalKey, ProbeQuality]],
     correct_decision: bool,
+    *,
+    personality: Personality | None = None,
 ) -> TaskGrade:
     weights = TASK_WEIGHTS[task]
 
-    coverage = sum(1 for signal in REQUIRED_SIGNALS if known_signals.get(signal) is not None) / len(REQUIRED_SIGNALS)
+    # Signal coverage: required signals + bonus for motivation
+    required_known = sum(1 for s in REQUIRED_SIGNALS if known_signals.get(s) is not None)
+    all_known = sum(1 for s in ALL_SIGNALS if known_signals.get(s) is not None)
+    coverage = (required_known / len(REQUIRED_SIGNALS)) * 0.8 + (all_known / len(ALL_SIGNALS)) * 0.2
 
+    # Probe quality: average quality across all probes
     if probe_log:
         probe_quality = sum(PROBE_QUALITY_SCORES[quality] for _, quality in probe_log) / len(probe_log)
     else:
         probe_quality = 0.0
 
+    # Verification: proportion of required signals that were verified
     verified_signals = {signal for signal, quality in probe_log if quality == ProbeQuality.VERIFIED}
     verification = len(verified_signals & REQUIRED_SIGNALS) / len(REQUIRED_SIGNALS)
 
-    max_expected_probes = 3 if task != TaskLevel.HARD else 5
-    efficiency = max(0.0, 1.0 - max(0, len(probe_log) - max_expected_probes) * 0.2)
+    # Efficiency: penalize excessive probing
+    max_expected_probes = 4 if task == TaskLevel.EASY else 5 if task == TaskLevel.MEDIUM else 7
+    efficiency = max(0.0, 1.0 - max(0, len(probe_log) - max_expected_probes) * 0.15)
+
+    # Misleading signal detection (hard mode): did the agent verify signals that had
+    # surface values? Score based on whether verified signals changed from initial direct probe.
+    misleading_detection = 0.0
+    if task == TaskLevel.HARD:
+        # In hard mode, any required signal that was probed first as DIRECT and then as VERIFIED
+        # indicates the agent correctly suspected misleading info.
+        direct_signals = {s for s, q in probe_log if q == ProbeQuality.DIRECT}
+        verified_after_direct = {
+            s for s in direct_signals
+            if s in verified_signals and s in REQUIRED_SIGNALS
+        }
+        if direct_signals & REQUIRED_SIGNALS:
+            misleading_detection = len(verified_after_direct) / len(direct_signals & REQUIRED_SIGNALS)
 
     components = {
         "correct_decision": 1.0 if correct_decision else 0.0,
@@ -74,6 +115,13 @@ def grade_episode(
         "probe_quality": round(probe_quality, 4),
         "verification": round(verification, 4),
         "efficiency": round(efficiency, 4),
+        "misleading_detection": round(misleading_detection, 4),
     }
-    score = sum(weights[key] * components[key] for key in weights)
-    return TaskGrade(task=task.value, score=round(min(max(score, 0.0), 1.0), 4), components=components)
+    raw_score = sum(weights.get(key, 0.0) * components[key] for key in components)
+
+    # Apply personality difficulty multiplier (rewards harder conversations)
+    if personality is not None:
+        raw_score *= PERSONALITY_DIFFICULTY.get(personality, 1.0)
+
+    score = round(min(max(raw_score, 0.0), 1.0), 4)
+    return TaskGrade(task=task.value, score=score, components=components)

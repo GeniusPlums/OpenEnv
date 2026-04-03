@@ -1,19 +1,48 @@
 name: LeadQualEnv
-version: 2.1.0
-entrypoint: leadqualenv.environment.env:LeadQualEnv
-description: Deterministic real-estate outbound lead qualification benchmark with adversarial verification tasks.
+version: 2.2.0
+entrypoint: server.leadqualenv_environment:LeadQualOpenEnv
+description: >-
+  Deterministic real-estate outbound lead qualification benchmark.
+  An AI agent acts as an SDR qualifying prospective buyers by uncovering
+  budget, timeline, and decision authority before routing leads.
+  Features adversarial hard-mode with misleading surface signals,
+  personality-driven buyer responses, competitor pressure mechanics,
+  and lead temperature decay.
+author: Anish Adamane
+license: MIT
+tags:
+  - openenv
+  - real-estate
+  - sales
+  - lead-qualification
+  - agent-benchmark
 metadata:
   domain: real_estate_sales
   max_turns: 10
+  reward_range: [-0.50, 0.80]
+  episode_length: 10
   tasks:
     - easy
     - medium
     - hard
   task_progression:
-    easy: direct qualification
-    medium: nurture vs qualify ambiguity
-    hard: misleading surface signals that require verification
+    easy: direct qualification with straightforward buyers
+    medium: nurture vs qualify ambiguity with delayed timelines
+    hard: misleading surface signals requiring verification probes
   decision_labels:
     - qualified
     - nurture
     - unqualified
+  observation_fields:
+    - conversation_history
+    - known_signals
+    - probe_log
+    - turn_number
+    - max_turns
+    - lead_temperature
+    - qualification_confidence
+    - property_context
+  action_fields:
+    - message
+    - decision
+

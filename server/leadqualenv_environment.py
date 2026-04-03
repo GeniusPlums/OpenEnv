@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from typing import Any
 from uuid import uuid4
 
 from openenv.core.env_server.interfaces import Environment
@@ -8,7 +9,6 @@ from openenv.core.env_server.types import EnvironmentMetadata
 from leadqualenv.environment import Action, Decision, LeadQualEnv, TaskLevel
 
 from .models import LeadQualActionModel, LeadQualObservationModel, LeadQualStateModel
-
 
 TASK_NAME_MAP = {
     "easy": TaskLevel.EASY,
@@ -20,7 +20,7 @@ TASK_NAME_MAP = {
 class LeadQualOpenEnv(Environment):
     SUPPORTS_CONCURRENT_SESSIONS = False
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
         self._task = TaskLevel.EASY
         self._env = LeadQualEnv(task=self._task)
@@ -30,20 +30,31 @@ class LeadQualOpenEnv(Environment):
         self,
         seed: int | None = None,
         episode_id: str | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> LeadQualObservationModel:
         task_name = kwargs.get("task", "easy")
         self._task = TASK_NAME_MAP.get(task_name, TaskLevel.EASY)
         self._env = LeadQualEnv(task=self._task)
         obs = self._env.reset(seed=seed)
         self._sync_state(episode_id=episode_id or str(uuid4()))
-        return self._convert_observation(obs, reward=None, done=False, info={"task": self._task.value})
+        return self._convert_observation(
+            obs,
+            reward=None,
+            done=False,
+            info={
+                "task": self._task.value,
+                "available_actions": {
+                    "message": "Ask the buyer a follow-up question.",
+                    "decision": ["qualified", "nurture", "unqualified"],
+                },
+            },
+        )
 
     def step(
         self,
         action: LeadQualActionModel,
         timeout_s: float | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> LeadQualObservationModel:
         del timeout_s, kwargs
         env_action = Action(
@@ -67,7 +78,7 @@ class LeadQualOpenEnv(Environment):
         return EnvironmentMetadata(
             name="LeadQualEnv",
             description="Outbound real-estate lead qualification benchmark with deterministic grading.",
-            version="2.1.0",
+            version="2.2.0",
         )
 
     def _sync_state(self, episode_id: str | None) -> None:
@@ -81,15 +92,26 @@ class LeadQualOpenEnv(Environment):
             conversation_history=internal_state.conversation_history,
             known_signals={key.value: value for key, value in internal_state.known_signals.items()},
             probe_log=[(signal.value, quality.value) for signal, quality in internal_state.probe_log],
+            lead_temperature=internal_state.lead_temperature,
+            qualification_confidence=internal_state.qualification_confidence,
         )
 
-    def _convert_observation(self, obs, reward, done: bool, info: dict) -> LeadQualObservationModel:
+    def _convert_observation(
+        self,
+        obs: Any,
+        reward: float | None,
+        done: bool,
+        info: dict[str, Any],
+    ) -> LeadQualObservationModel:
         return LeadQualObservationModel(
             conversation_history=obs.conversation_history,
             known_signals={key.value: value for key, value in obs.known_signals.items()},
             probe_log=[(signal.value, quality.value) for signal, quality in obs.probe_log],
             turn_number=obs.turn_number,
             max_turns=obs.max_turns,
+            lead_temperature=obs.lead_temperature,
+            qualification_confidence=obs.qualification_confidence,
+            property_context=obs.property_context,
             reward=reward,
             done=done,
             info=info,

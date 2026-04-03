@@ -31,6 +31,14 @@ class Decision(str, Enum):
     UNQUALIFIED = "unqualified"
 
 
+class Personality(str, Enum):
+    DIRECT = "direct"
+    EVASIVE = "evasive"
+    VERBOSE = "verbose"
+    TERSE = "terse"
+    FRIENDLY = "friendly"
+
+
 class LeadQualEnvError(Exception):
     """Base environment error."""
 
@@ -49,8 +57,13 @@ class LeadProfile:
     timeline: str
     decision_maker: bool
     motivation: str
+    personality: Personality = Personality.DIRECT
+    property_type: str = "apartment"
+    location: str = "downtown"
     surface_budget: Optional[str] = None
     surface_timeline: Optional[str] = None
+    competitor_mention: bool = False
+    objection_on: Optional[SignalKey] = None
 
     @property
     def true_signals(self) -> dict[SignalKey, str | bool]:
@@ -70,6 +83,10 @@ class LeadProfile:
             signals[SignalKey.TIMELINE] = self.surface_timeline
         return signals
 
+    @property
+    def has_misleading_signals(self) -> bool:
+        return bool(self.surface_signals)
+
 
 @dataclass(frozen=True)
 class Action:
@@ -88,6 +105,9 @@ class Observation:
     probe_log: list[tuple[SignalKey, ProbeQuality]]
     turn_number: int
     max_turns: int
+    lead_temperature: float = 1.0
+    qualification_confidence: float = 0.0
+    property_context: Optional[str] = None
 
 
 @dataclass
@@ -107,3 +127,5 @@ class EnvironmentState:
     conversation_history: list[dict[str, str]]
     known_signals: dict[SignalKey, Optional[str | bool]]
     probe_log: list[tuple[SignalKey, ProbeQuality]]
+    lead_temperature: float = 1.0
+    qualification_confidence: float = 0.0
