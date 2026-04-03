@@ -249,6 +249,7 @@ def generate_response(
     task: TaskLevel,
     *,
     lead_temperature: float = 1.0,
+    objection_already_triggered: bool = False,
 ) -> tuple[str, str | bool | None]:
     if probe_quality == ProbeQuality.IRRELEVANT or signal is None:
         return "Could you help me understand what you need from me?", None
@@ -267,16 +268,19 @@ def generate_response(
         return vague_text, None  # Return no value — buyer is too disengaged for real info
 
     # Handle objection mechanic: lead pushes back on first probe of objection signal
-    if profile.objection_on == signal and probe_quality == ProbeQuality.DIRECT:
+    if (
+        profile.objection_on == signal
+        and probe_quality == ProbeQuality.DIRECT
+        and not objection_already_triggered
+    ):
         return OBJECTION_RESPONSES.get(signal, "I'd rather not answer that right now."), None
 
     value = resolve_signal(profile, signal, probe_quality, task)
     text = paraphrase_signal(profile, signal, value, probe_quality)
 
     # Competitor pressure mechanic
-    if profile.competitor_mention and signal == SignalKey.TIMELINE and probe_quality == ProbeQuality.DIRECT:
+    if profile.competitor_mention and signal in {SignalKey.TIMELINE, SignalKey.BUDGET} and probe_quality == ProbeQuality.DIRECT:
         import random as _rng
         text += " " + _rng.Random(hash(text)).choice(COMPETITOR_RESPONSES)
 
     return text, value
-

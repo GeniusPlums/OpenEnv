@@ -33,12 +33,23 @@ def rapport_bonus(message: str, turn_number: int) -> float:
     if turn_number > 2:
         return 0.0
     lowered = message.lower()
+    rapport_markers = [
+        "tell me more about",
+        "what stood out",
+        "what do you like about",
+        "how does",
+        "what caught your eye",
+        "what are you hoping for",
+        "what kind of",
+        "which part of",
+    ]
     property_keywords = [
         "property", "apartment", "villa", "condo", "townhouse", "penthouse",
         "studio", "duplex", "bungalow", "neighborhood", "area", "location",
         "listing", "home", "house", "place",
     ]
-    if any(keyword in lowered for keyword in property_keywords):
+    has_property_context = any(keyword in lowered for keyword in property_keywords)
+    if has_property_context and any(marker in lowered for marker in rapport_markers):
         return RAPPORT_BONUS
     return 0.0
 

@@ -9,23 +9,38 @@ from typing import Any
 
 from openai import OpenAI
 
-from leadqualenv.environment import Action, Decision, LeadQualEnv, SignalKey, TaskLevel
+from leadqualenv.environment import Action, Decision, LeadProfile, LeadQualEnv, Personality, SignalKey, TaskLevel
+from leadqualenv.environment.grader import classify_lead
 
-API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
-MODEL_NAME = os.getenv("MODEL_NAME", "meta-llama/Meta-Llama-3.1-70B-Instruct")
-_hf = os.getenv("HF_TOKEN", "").strip()
-_oai = os.getenv("OPENAI_API_KEY", "").strip()
-HF_TOKEN: str | None = _hf or _oai or None
-LOCAL_IMAGE_NAME = os.getenv("LOCAL_IMAGE_NAME")
-BENCHMARK = os.getenv("LEADQUALENV_BENCHMARK", "leadqualenv")
-MAX_STEPS = int(os.getenv("LEADQUALENV_MAX_STEPS", "10"))
-GLOBAL_TIMEOUT = int(os.getenv("LEADQUALENV_TIMEOUT", "900"))  # 15-minute safety cap
-SEED = int(os.getenv("LEADQUALENV_SEED", "0"))
 TASKS = {
     "easy": TaskLevel.EASY,
     "medium": TaskLevel.MEDIUM,
     "hard": TaskLevel.HARD,
 }
+
+
+@dataclass(frozen=True)
+class RuntimeConfig:
+    api_base_url: str
+    model_name: str
+    hf_token: str | None
+    benchmark: str
+    max_steps: int
+    global_timeout: int
+    seed: int
+
+
+def load_config() -> RuntimeConfig:
+    hf_token = os.getenv("HF_TOKEN", "").strip() or os.getenv("OPENAI_API_KEY", "").strip() or None
+    return RuntimeConfig(
+        api_base_url=os.getenv("API_BASE_URL", "https://router.huggingface.co/v1"),
+        model_name=os.getenv("MODEL_NAME", "meta-llama/Meta-Llama-3.1-70B-Instruct"),
+        hf_token=hf_token,
+        benchmark=os.getenv("LEADQUALENV_BENCHMARK", "leadqualenv"),
+        max_steps=int(os.getenv("LEADQUALENV_MAX_STEPS", "10")),
+        global_timeout=int(os.getenv("LEADQUALENV_TIMEOUT", "900")),
+        seed=int(os.getenv("LEADQUALENV_SEED", "0")),
+    )
 
 
 @dataclass
@@ -75,26 +90,21 @@ def deterministic_fallback(env: LeadQualEnv) -> Action:
 
 
 def _classify_from_known(known: dict[SignalKey, Any]) -> Decision:
-    """Classify lead from known signals without needing a full profile object."""
-    budget = known[SignalKey.BUDGET]
-    timeline = known[SignalKey.TIMELINE]
-    decision_maker = known[SignalKey.DECISION_MAKER]
-
-    if not decision_maker:
-        return Decision.UNQUALIFIED
-    if budget == "low":
-        return Decision.UNQUALIFIED
-    if timeline == "immediate":
-        return Decision.QUALIFIED if budget in ("medium", "high") else Decision.UNQUALIFIED
-    if timeline == "3-6 months":
-        return Decision.NURTURE
-    return Decision.UNQUALIFIED
+    """Classify from discovered signals using the same logic as the environment grader."""
+    synthetic_profile = LeadProfile(
+        budget=str(known[SignalKey.BUDGET]),
+        timeline=str(known[SignalKey.TIMELINE]),
+        decision_maker=bool(known[SignalKey.DECISION_MAKER]),
+        motivation=str(known.get(SignalKey.MOTIVATION) or "self_use"),
+        personality=Personality.DIRECT,
+    )
+    return classify_lead(synthetic_profile)
 
 
-def create_client() -> OpenAI | None:
-    if not HF_TOKEN:
+def create_client(config: RuntimeConfig) -> OpenAI | None:
+    if not config.hf_token:
         return None
-    return OpenAI(api_key=HF_TOKEN, base_url=API_BASE_URL)
+    return OpenAI(api_key=config.hf_token, base_url=config.api_base_url)
 
 
 def strip_markdown_json(text: str) -> str:
@@ -107,7 +117,7 @@ def strip_markdown_json(text: str) -> str:
     return text
 
 
-def ask_model_for_action(client: OpenAI | None, env: LeadQualEnv) -> tuple[Action, bool]:
+def ask_model_for_action(client: OpenAI | None, env: LeadQualEnv, config: RuntimeConfig) -> tuple[Action, bool]:
     """Returns (action, used_fallback)."""
     fallback = deterministic_fallback(env)
     if client is None:
@@ -136,7 +146,7 @@ def ask_model_for_action(client: OpenAI | None, env: LeadQualEnv) -> tuple[Actio
 
     try:
         response = client.chat.completions.create(
-            model=MODEL_NAME,
+            model=config.model_name,
             temperature=0,
             messages=[
                 {
@@ -171,9 +181,9 @@ def format_reward(value: float) -> str:
     return f"{value:.2f}"
 
 
-def run_task(task_name: str, task: TaskLevel, client: OpenAI | None, start_time: float) -> EpisodeResult:
-    env = LeadQualEnv(task=task, max_turns=MAX_STEPS)
-    env.reset(seed=SEED)
+def run_task(task_name: str, task: TaskLevel, client: OpenAI | None, start_time: float, config: RuntimeConfig) -> EpisodeResult:
+    env = LeadQualEnv(task=task, max_turns=config.max_steps)
+    env.reset(seed=config.seed)
 
     rewards: list[float] = []
     success = False
@@ -181,16 +191,21 @@ def run_task(task_name: str, task: TaskLevel, client: OpenAI | None, start_time:
     score = 0.0
 
     print(
-        f"[START] task={task_name} env={BENCHMARK} model={MODEL_NAME} api_base={API_BASE_URL}",
+        f"[START] task={task_name} env={config.benchmark} model={config.model_name} api_base={config.api_base_url}",
         flush=True,
     )
     try:
-        while not env.done and steps < MAX_STEPS:
+        while not env.done and steps < config.max_steps:
             elapsed = time.time() - start_time
-            if elapsed > GLOBAL_TIMEOUT:
-                print(f"[STEP] step={steps + 1} action=TIMEOUT reward=0.00 done=true error=global_timeout", flush=True)
+            if elapsed > config.global_timeout:
+                partial_score = env._partial_grade()["task_score"] if env.profile is not None else 0.0
+                score = float(partial_score)
+                print(
+                    f"[STEP] step={steps + 1} action=TIMEOUT reward=0.00 done=true error=global_timeout partial_score={score:.3f}",
+                    flush=True,
+                )
                 break
-            action, used_fallback = ask_model_for_action(client, env)
+            action, used_fallback = ask_model_for_action(client, env, config)
             result = env.step(action)
             steps += 1
             rewards.append(float(result.reward))
@@ -227,7 +242,8 @@ def run_task(task_name: str, task: TaskLevel, client: OpenAI | None, start_time:
 
 
 def main() -> list[EpisodeResult]:
-    client = create_client()
+    config = load_config()
+    client = create_client(config)
     requested_task = os.getenv("LEADQUALENV_TASK")
     start_time = time.time()
 
@@ -239,7 +255,7 @@ def main() -> list[EpisodeResult]:
     else:
         items = list(TASKS.items())
 
-    return [run_task(task_name, task, client, start_time) for task_name, task in items]
+    return [run_task(task_name, task, client, start_time, config) for task_name, task in items]
 
 
 if __name__ == "__main__":

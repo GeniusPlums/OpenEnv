@@ -45,6 +45,7 @@ class LeadQualEnv:
         self.done = False
         self._lead_temperature = 1.0
         self._qual_confidence = 0.0
+        self._objections_seen: set[SignalKey] = set()
 
     def reset(self, seed: int | None = None) -> Observation:
         profile = sample_profile(self.task, seed)
@@ -60,6 +61,7 @@ class LeadQualEnv:
         self.probe_log = []
         self._lead_temperature = 1.0
         self._qual_confidence = 0.0
+        self._objections_seen = set()
 
         opener = sample_opener(profile, seed)
         property_ctx = f"{profile.property_type} in {profile.location}"
@@ -125,14 +127,42 @@ class LeadQualEnv:
         }
 
     def _update_temperature(self) -> None:
-        """Lead temperature decays each turn — simulates lead cooling."""
-        self._lead_temperature = max(0.0, 1.0 - 0.08 * self.turn_number)
+        """Lead temperature decays gradually without auto-collapsing near the turn cap."""
+        if self.max_turns <= 1:
+            self._lead_temperature = 0.4
+            return
+        progress = min(1.0, max(0.0, self.turn_number / self.max_turns))
+        self._lead_temperature = round(max(0.4, 1.0 - 0.6 * progress), 4)
 
     def _update_confidence(self) -> None:
         """Compute running qualification confidence from known signals."""
         known_count = sum(1 for v in self.known_signals.values() if v is not None)
-        verified_count = sum(1 for _, q in self.probe_log if q == ProbeQuality.VERIFIED)
-        self._qual_confidence = min(1.0, (known_count * 0.2) + (verified_count * 0.1))
+        verified_required = len({
+            signal for signal, quality in self.probe_log
+            if quality == ProbeQuality.VERIFIED and signal in {
+                SignalKey.BUDGET,
+                SignalKey.TIMELINE,
+                SignalKey.DECISION_MAKER,
+            }
+        })
+        coverage_score = known_count / len(self.known_signals)
+        verification_score = verified_required / 3
+        self._qual_confidence = round(min(1.0, 0.75 * coverage_score + 0.25 * verification_score), 4)
+
+    def _partial_grade(self) -> dict[str, object]:
+        assert self.profile is not None
+        grade = grade_episode(
+            task=self.task,
+            known_signals=self.known_signals,
+            probe_log=self.probe_log,
+            correct_decision=False,
+            personality=self.profile.personality,
+            misleading_signals=set(self.profile.surface_signals),
+        )
+        return {
+            "task_score": grade.score,
+            "task_score_components": grade.components,
+        }
 
     def step(self, action: Action) -> StepResult:
         if self.done:
@@ -180,12 +210,23 @@ class LeadQualEnv:
         response_text, value = generate_response(
             self.profile, probe.signal, probe.quality, self.task,
             lead_temperature=self._lead_temperature,
+            objection_already_triggered=probe.signal in self._objections_seen if probe.signal else False,
         )
         self.conversation_history.append({"role": "user", "content": response_text})
 
+        objection_triggered = (
+            probe.signal is not None
+            and self.profile.objection_on == probe.signal
+            and probe.quality == ProbeQuality.DIRECT
+            and probe.signal not in self._objections_seen
+        )
+        if objection_triggered:
+            self._objections_seen.add(probe.signal)
+
         if probe.signal is not None:
-            self.probe_log.append((probe.signal, probe.quality))
-            if probe.quality in (ProbeQuality.DIRECT, ProbeQuality.VERIFIED):
+            if not objection_triggered:
+                self.probe_log.append((probe.signal, probe.quality))
+            if not objection_triggered and probe.quality in (ProbeQuality.DIRECT, ProbeQuality.VERIFIED):
                 previous_value = self.known_signals.get(probe.signal)
                 self.known_signals[probe.signal] = value
 
@@ -202,6 +243,7 @@ class LeadQualEnv:
         if done:
             self.done = True
             reward += NO_DECISION_PENALTY
+            partial_grade = self._partial_grade()
 
         return StepResult(
             observation=self._observation(),
@@ -211,6 +253,8 @@ class LeadQualEnv:
                 "probe_quality": probe.quality.value,
                 "signal": probe.signal.value if probe.signal else None,
                 "lead_temperature": self._lead_temperature,
+                "termination_reason": "max_turns_reached" if done else None,
+                **(partial_grade if done else {}),
                 "crm_card": self._crm_card("no_decision") if done else None,
             },
         )
@@ -229,11 +273,17 @@ class LeadQualEnv:
         if self.turn_number == 1 or known_required_count < 3:
             self.done = True
             error = InsufficientSignalsError("At least budget, timeline, and decision_maker are required.")
+            partial_grade = self._partial_grade()
             return StepResult(
                 observation=self._observation(),
                 reward=INSUFFICIENT_SIGNALS_PENALTY,
                 done=True,
-                info={"error": type(error).__name__, "message": str(error)},
+                info={
+                    "error": type(error).__name__,
+                    "message": str(error),
+                    "termination_reason": "insufficient_signals",
+                    **partial_grade,
+                },
             )
 
         correct = decision == classify_lead(self.profile)
@@ -244,6 +294,7 @@ class LeadQualEnv:
             probe_log=self.probe_log,
             correct_decision=correct,
             personality=self.profile.personality,
+            misleading_signals=set(self.profile.surface_signals),
         )
         self.done = True
         return StepResult(

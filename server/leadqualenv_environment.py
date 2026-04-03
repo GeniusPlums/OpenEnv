@@ -8,7 +8,7 @@ from openenv.core.env_server.types import EnvironmentMetadata
 
 from leadqualenv.environment import Action, Decision, LeadQualEnv, TaskLevel
 
-from .models import LeadQualActionModel, LeadQualObservationModel, LeadQualStateModel
+from .models import LeadQualActionModel, LeadQualObservationModel, LeadQualRewardModel, LeadQualStateModel
 
 TASK_NAME_MAP = {
     "easy": TaskLevel.EASY,
@@ -113,6 +113,13 @@ class LeadQualOpenEnv(Environment):
             qualification_confidence=obs.qualification_confidence,
             property_context=obs.property_context,
             reward=reward,
+            reward_detail=LeadQualRewardModel(
+                value=reward,
+                components={
+                    "task_score": float(info["task_score"]),
+                } if reward is not None and "task_score" in info else {},
+                description=str(info.get("termination_reason") or info.get("probe_quality") or ""),
+            ) if reward is not None else None,
             done=done,
             info=info,
             metadata={"task": self._task.value},

@@ -46,6 +46,7 @@ def test_server_step_returns_reward():
     obs = env.step(LeadQualActionModel(message="What budget range are you looking at exactly?"))
 
     assert obs.reward is not None
+    assert obs.reward_detail is not None
 
 
 def test_server_full_episode():

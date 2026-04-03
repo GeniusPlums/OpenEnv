@@ -149,6 +149,22 @@ def test_max_turns_triggers_no_decision_penalty():
 
     assert result.done is True
     assert result.reward < 0  # NO_DECISION_PENALTY
+    assert "task_score" in result.info
+    assert result.info["termination_reason"] == "max_turns_reached"
+
+
+def test_objection_does_not_pollute_probe_log_and_allows_retry():
+    env = LeadQualEnv(TaskLevel.HARD)
+    env.reset(seed=17)
+
+    result = env.step(Action(message="What budget range are you looking at exactly?"))
+
+    assert env.probe_log == []
+    assert env.known_signals[SignalKey.BUDGET] is None
+    assert "rather not discuss exact numbers" in result.observation.conversation_history[-1]["content"]
+
+    env.step(Action(message="To confirm, what budget level are you really targeting?"))
+    assert env.known_signals[SignalKey.BUDGET] == env.profile.budget
 
 
 def test_hard_profiles_have_varied_correct_decisions():

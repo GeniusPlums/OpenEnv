@@ -40,6 +40,7 @@ class LeadQualObservationModel(Observation):
     lead_temperature: float = 1.0
     qualification_confidence: float = 0.0
     property_context: str | None = None
+    reward_detail: LeadQualRewardModel | None = None
     info: dict[str, Any] = Field(default_factory=dict)
 
 

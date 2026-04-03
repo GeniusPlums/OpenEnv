@@ -73,6 +73,7 @@ def grade_episode(
     correct_decision: bool,
     *,
     personality: Personality | None = None,
+    misleading_signals: set[SignalKey] | None = None,
 ) -> TaskGrade:
     weights = TASK_WEIGHTS[task]
 
@@ -99,15 +100,19 @@ def grade_episode(
     # surface values? Score based on whether verified signals changed from initial direct probe.
     misleading_detection = 0.0
     if task == TaskLevel.HARD:
-        # In hard mode, any required signal that was probed first as DIRECT and then as VERIFIED
-        # indicates the agent correctly suspected misleading info.
-        direct_signals = {s for s, q in probe_log if q == ProbeQuality.DIRECT}
+        direct_signals = {signal for signal, quality in probe_log if quality == ProbeQuality.DIRECT}
+        relevant_signals = direct_signals & REQUIRED_SIGNALS
+        if misleading_signals is not None:
+            relevant_signals &= misleading_signals
+
         verified_after_direct = {
-            s for s in direct_signals
-            if s in verified_signals and s in REQUIRED_SIGNALS
+            signal for signal in relevant_signals
+            if signal in verified_signals
         }
-        if direct_signals & REQUIRED_SIGNALS:
-            misleading_detection = len(verified_after_direct) / len(direct_signals & REQUIRED_SIGNALS)
+        if relevant_signals:
+            misleading_detection = len(verified_after_direct) / len(relevant_signals)
+        elif misleading_signals is not None:
+            misleading_detection = 1.0
 
     components = {
         "correct_decision": 1.0 if correct_decision else 0.0,

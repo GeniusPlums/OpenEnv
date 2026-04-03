@@ -19,11 +19,7 @@ def _capture_inference_output() -> str:
     }
     buf = io.StringIO()
     with mock.patch.dict(os.environ, env_vars, clear=False):
-        # Reimport to pick up env var changes
-        import importlib
-
         import inference
-        importlib.reload(inference)
         with redirect_stdout(buf):
             inference.main()
     return buf.getvalue()

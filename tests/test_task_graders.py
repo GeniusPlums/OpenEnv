@@ -94,7 +94,7 @@ def test_hard_grade_rewards_verification():
 
 
 def test_hard_verification_weight_is_significant():
-    """Hard task should weight verification at 0.30 — a major scoring component."""
+    """Hard task should weight verification heavily — a major scoring component."""
     grade = grade_episode(
         task=TaskLevel.HARD,
         known_signals={
@@ -113,6 +113,27 @@ def test_hard_verification_weight_is_significant():
     # With no verification, score should be lower despite correct decision
     assert grade.components["verification"] == 0.0
     assert grade.score < 0.85
+
+
+def test_hard_misleading_detection_credits_only_actual_surface_traps():
+    grade = grade_episode(
+        task=TaskLevel.HARD,
+        known_signals={
+            SignalKey.BUDGET: "high",
+            SignalKey.TIMELINE: "3-6 months",
+            SignalKey.DECISION_MAKER: True,
+            SignalKey.MOTIVATION: None,
+        },
+        probe_log=[
+            (SignalKey.DECISION_MAKER, ProbeQuality.DIRECT),
+            (SignalKey.TIMELINE, ProbeQuality.DIRECT),
+            (SignalKey.BUDGET, ProbeQuality.DIRECT),
+            (SignalKey.TIMELINE, ProbeQuality.VERIFIED),
+        ],
+        correct_decision=True,
+        misleading_signals={SignalKey.TIMELINE},
+    )
+    assert grade.components["misleading_detection"] == 1.0
 
 
 def test_medium_grade_penalizes_inefficient_extra_probes():

@@ -56,6 +56,16 @@ TASK_PROFILES: dict[TaskLevel, list[LeadProfile]] = {
             motivation="self_use", personality=Personality.FRIENDLY,
             property_type="bungalow", location="hillside",
         ),
+        LeadProfile(
+            budget="medium", timeline="immediate", decision_maker=False,
+            motivation="self_use", personality=Personality.DIRECT,
+            property_type="apartment", location="riverfront",
+        ),
+        LeadProfile(
+            budget="low", timeline="immediate", decision_maker=True,
+            motivation="self_use", personality=Personality.FRIENDLY,
+            property_type="studio", location="market district",
+        ),
     ],
     TaskLevel.MEDIUM: [
         LeadProfile(

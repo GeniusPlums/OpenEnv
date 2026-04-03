@@ -85,15 +85,15 @@ Each observation contains:
     "probe_log": [[signal, quality], ...],
     "turn_number": int,
     "max_turns": int,
-    "lead_temperature": float,          # 1.0 → 0.0, decays each turn
-    "qualification_confidence": float,   # 0.0 → 1.0, rises as signals are uncovered
+    "lead_temperature": float,          # 1.0 → ~0.4, decays across the episode
+    "qualification_confidence": float,   # 0.0 → 1.0, reaches 1.0 when coverage + verification are complete
     "property_context": str,             # e.g. "apartment in downtown"
 }
 ```
 
-**Lead temperature** simulates real-world lead cooling — the longer you take, the less engaged the buyer becomes. This creates natural urgency without artificial time limits.
+**Lead temperature** simulates real-world lead cooling — the longer you take, the less engaged the buyer becomes. It now decays across the configured episode length instead of collapsing near the end by default.
 
-**Qualification confidence** gives the agent a running estimate of how much information it has gathered, encouraging complete signal coverage before deciding.
+**Qualification confidence** gives the agent a running estimate of how much information it has gathered, combining signal coverage with verification of required signals.
 
 ---
 
@@ -102,7 +102,7 @@ Each observation contains:
 LeadQualEnv includes three deterministic tasks with increasing difficulty:
 
 ### Easy
-Straightforward buyers with direct, truthful answers and clear qualifying signals (immediate timeline, medium/high budget, decision maker). Tests basic signal extraction and correct qualification logic. Correct answer is always `qualified`.
+Mostly straightforward buyers with direct, truthful answers and clear qualifying signals (immediate timeline, medium/high budget, decision maker). A small number of easy profiles are intentionally `unqualified` to test basic negative routing without introducing deceptive hard-mode behavior.
 
 ### Medium
 Leads that look attractive on budget or motivation but should be routed to `nurture` because the timeline is 3–6 months. Tests whether the agent avoids over-qualifying. Some leads have evasive personalities.
@@ -110,11 +110,11 @@ Leads that look attractive on budget or motivation but should be routed to `nurt
 ### Hard
 Adversarial profiles where direct probes reveal **misleading surface values** for budget and/or timeline. The agent must use verification probes to uncover true signals before routing. Correct answers vary across `qualified`, `nurture`, and `unqualified` depending on the profile. Additional mechanics:
 
-- **Competitor pressure** — Some leads mention shopping with other agents, creating urgency
+- **Competitor pressure** — Some leads mention shopping with other agents on timeline or budget probes, creating urgency
 - **Objection handling** — Some leads push back on certain questions, blocking the first probe
 - **Surface signal traps** — Some surface signals match reality (requiring the agent to verify anyway), while others are partially misleading (only budget or only timeline is fake)
 
-Task profiles live in [`leadqualenv/environment/profiles.py`](leadqualenv/environment/profiles.py) — 10+ profiles per difficulty level with diverse personalities, property types, and locations.
+Task profiles live in [`leadqualenv/environment/profiles.py`](leadqualenv/environment/profiles.py) — 34 curated profiles across the three difficulty levels, with diverse personalities, property types, and locations.
 
 ---
 
@@ -161,16 +161,17 @@ Scoring components:
 | `probe_quality` | Average quality of probes (irrelevant=0, vague=0.2, direct=0.8, verified=1.0) |
 | `verification` | Proportion of required signals that were verified |
 | `efficiency` | Penalizes excessive probing beyond expected count |
+| `misleading_detection` | Hard-mode credit for verifying signals that were actually misleading |
 
 Per-task weights:
 
-| Task | Decision | Coverage | Quality | Verification | Efficiency |
-|------|----------|----------|---------|--------------|------------|
-| Easy | 0.45 | 0.25 | 0.15 | — | 0.15 |
-| Medium | 0.45 | 0.20 | 0.15 | 0.10 | 0.10 |
-| Hard | 0.35 | 0.10 | 0.15 | **0.30** | 0.10 |
+| Task | Decision | Coverage | Quality | Verification | Efficiency | Misleading |
+|------|----------|----------|---------|--------------|------------|------------|
+| Easy | 0.45 | 0.25 | 0.15 | — | 0.15 | — |
+| Medium | 0.45 | 0.20 | 0.15 | 0.10 | 0.10 | — |
+| Hard | 0.30 | 0.10 | 0.10 | **0.35** | 0.05 | 0.10 |
 
-Hard mode weights verification at **30%** — an agent that skips verification will score significantly lower even with a correct decision.
+Hard mode weights verification at **35%** and only grants misleading-detection credit for signals that were actually surface traps, so partial verification is scored fairly.
 
 ---
 
@@ -185,6 +186,8 @@ The inference entrypoint is [`inference.py`](inference.py). It:
 - Falls back to a deterministic policy if the model output is invalid or unavailable
 - Strips markdown-wrapped JSON from LLM responses
 - Applies a 15-second timeout on API calls and a 15-minute global runtime cap
+- Uses the same lead-classification logic as the grader for its deterministic fallback
+- Preserves partial `task_score` on incomplete episodes such as timeout or no-decision endings
 
 ### Required Environment Variables
 
@@ -202,6 +205,8 @@ set LEADQUALENV_TASK=easy
 set LEADQUALENV_SEED=0
 set LEADQUALENV_MAX_STEPS=10
 set LEADQUALENV_BENCHMARK=leadqualenv
+set LEADQUALENV_USE_LLM=1
+set GROQ_API_KEY=your_groq_api_key
 ```
 
 ### Run
@@ -216,7 +221,7 @@ python inference.py
 |------|-------|-------|---------|
 | Easy | 5 | **0.989** | `0.05, 0.05, 0.05, 0.07, 0.73` |
 | Medium | 5 | **0.922** | `0.05, 0.05, 0.05, 0.07, 0.73` |
-| Hard | 7 | **0.887** | `0.05, 0.05, 0.05, 0.07, 0.06, 0.04, 0.59` |
+| Hard | 7 | **0.922** | `0.05, 0.05, 0.05, 0.07, 0.06, 0.04, 0.59` |
 
 ---
 
@@ -264,6 +269,14 @@ python inference.py
 openenv validate
 ```
 
+Example passing output:
+
+```text
+Validation successful
+Environment metadata loaded from openenv.yaml
+Entrypoint import succeeded: server.leadqualenv_environment:LeadQualOpenEnv
+```
+
 ---
 
 ## Docker and Hugging Face Spaces
@@ -289,7 +302,7 @@ leadqualenv/
 │   ├── env.py            # Core LeadQualEnv with step/reset/state
 │   ├── grader.py         # Probe classification and lead classification
 │   ├── models.py         # Typed dataclass models (Action, Observation, etc.)
-│   ├── profiles.py       # 32 lead profiles across 3 difficulty levels
+│   ├── profiles.py       # 34 lead profiles across 3 difficulty levels
 │   ├── reward.py         # Dense reward shaping with timing and decay
 │   ├── simulator.py      # Personality-aware buyer response generation
 │   └── task_graders.py   # Deterministic 0.0–1.0 graders per task
@@ -318,6 +331,6 @@ pyproject.toml            # Project configuration
 ## Limitations
 
 - The probe classifier uses keyword matching — sophisticated rephrasing may not be detected correctly
-- Buyer responses are template-based (with optional LLM paraphrasing via `LEADQUALENV_USE_LLM=1`)
+- Buyer responses are template-based by default; optional LLM paraphrasing can be enabled with `LEADQUALENV_USE_LLM=1` and `GROQ_API_KEY`
 - The environment is single-threaded and does not support concurrent sessions
-- Profile pool is finite (32 profiles) — sufficient for evaluation but limited for large-scale RL training without augmentation
+- Profile pool is finite (34 profiles) — sufficient for evaluation but limited for large-scale RL training without augmentation
