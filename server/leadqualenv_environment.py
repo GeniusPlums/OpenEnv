@@ -96,3 +96,6 @@ class LeadQualOpenEnv:
             qualification_confidence=self._env._qual_confidence,
             step_count=self._step_count,
         )
+
+    def close(self) -> None:
+        pass
