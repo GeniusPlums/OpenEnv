@@ -32,6 +32,14 @@ This benchmark captures several realistic failure modes:
 
 The environment is designed for both RL training and agent evaluation with dense trajectory rewards, personality-driven buyer responses, adversarial hard-mode profiles, and deterministic graders.
 
+### LLM Paraphrasing (Optional)
+Buyer responses use tailored hardcoded templates by default depending on the personality. For richer, more varied conversation, you can enable LLM-based paraphrasing. The system uses Groq to rewrite the buyer's answers in real time without altering the underlying ground-truth facts.
+
+```bash
+export LEADQUALENV_USE_LLM=1
+export GROQ_API_KEY="your_groq_api_key_here"
+```
+
 ---
 
 ## Environment API
@@ -114,7 +122,7 @@ Adversarial profiles where direct probes reveal **misleading surface values** fo
 - **Objection handling** — Some leads push back on certain questions, blocking the first probe
 - **Surface signal traps** — Some surface signals match reality (requiring the agent to verify anyway), while others are partially misleading (only budget or only timeline is fake)
 
-Task profiles live in [`leadqualenv/environment/profiles.py`](leadqualenv/environment/profiles.py) — 34 curated profiles across the three difficulty levels, with diverse personalities, property types, and locations.
+Task profiles live in [`leadqualenv/environment/profiles.py`](leadqualenv/environment/profiles.py) — 34 curated profiles across the three difficulty levels, with diverse personalities, property types, and locations. The `reset` method also supports infinite procedural profile generation using the `generated_profiles` count.
 
 ---
 
@@ -332,5 +340,3 @@ pyproject.toml            # Project configuration
 
 - The probe classifier uses keyword matching — sophisticated rephrasing may not be detected correctly
 - Buyer responses are template-based by default; optional LLM paraphrasing can be enabled with `LEADQUALENV_USE_LLM=1` and `GROQ_API_KEY`
-- The environment is single-threaded and does not support concurrent sessions
-- Profile pool is finite (34 profiles) — sufficient for evaluation but limited for large-scale RL training without augmentation

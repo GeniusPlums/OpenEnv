@@ -96,22 +96,23 @@ def grade_episode(
     max_expected_probes = 4 if task == TaskLevel.EASY else 5 if task == TaskLevel.MEDIUM else 7
     efficiency = max(0.0, 1.0 - max(0, len(probe_log) - max_expected_probes) * 0.15)
 
-    # Misleading signal detection (hard mode): did the agent verify signals that had
-    # surface values? Score based on whether verified signals changed from initial direct probe.
     misleading_detection = 0.0
     if task == TaskLevel.HARD:
         direct_signals = {signal for signal, quality in probe_log if quality == ProbeQuality.DIRECT}
-        relevant_signals = direct_signals & REQUIRED_SIGNALS
-        if misleading_signals is not None:
-            relevant_signals &= misleading_signals
-
-        verified_after_direct = {
-            signal for signal in relevant_signals
-            if signal in verified_signals
-        }
-        if relevant_signals:
-            misleading_detection = len(verified_after_direct) / len(relevant_signals)
-        elif misleading_signals is not None:
+        
+        # The traps we expect the agent to detect
+        if misleading_signals is not None and len(misleading_signals) > 0:
+            target_traps = misleading_signals & REQUIRED_SIGNALS
+            if target_traps:
+                verified_traps = {
+                    signal for signal in target_traps
+                    if signal in verified_signals and signal in direct_signals
+                }
+                misleading_detection = len(verified_traps) / len(target_traps)
+            else:
+                misleading_detection = 1.0
+        else:
+            # Full credit if there are no misleading signals in this profile
             misleading_detection = 1.0
 
     components = {

@@ -8,6 +8,7 @@ from .models import (
     Action,
     Decision,
     EnvironmentState,
+    EnvironmentSnapshot,
     InsufficientSignalsError,
     InvalidActionError,
     LeadProfile,
@@ -47,8 +48,8 @@ class LeadQualEnv:
         self._qual_confidence = 0.0
         self._objections_seen: set[SignalKey] = set()
 
-    def reset(self, seed: int | None = None) -> Observation:
-        profile = sample_profile(self.task, seed)
+    def reset(self, seed: int | None = None, generated_profiles: int = 0) -> Observation:
+        profile = sample_profile(self.task, seed, generated_count=generated_profiles)
         self.profile = profile
         self.turn_number = 0
         self.done = False
@@ -71,6 +72,39 @@ class LeadQualEnv:
             {"role": "user", "content": opener},
         ]
         return self._observation(property_context=property_ctx)
+
+    def restore(self, snapshot: EnvironmentSnapshot) -> Observation:
+        self.task = snapshot.task
+        self.max_turns = snapshot.max_turns
+        self.profile = snapshot.profile
+        self.turn_number = snapshot.turn_number
+        self.done = snapshot.done
+        self.conversation_history = list(snapshot.conversation_history)
+        self.known_signals = dict(snapshot.known_signals)
+        self.probe_log = list(snapshot.probe_log)
+        self._lead_temperature = snapshot.lead_temperature
+        self._qual_confidence = snapshot.qualification_confidence
+        self._objections_seen = set(snapshot.objections_seen)
+        return self._observation()
+
+    def snapshot(self) -> EnvironmentSnapshot:
+        assert self.profile is not None
+        return EnvironmentSnapshot(
+            task=self.task,
+            max_turns=self.max_turns,
+            profile=self.profile,
+            turn_number=self.turn_number,
+            done=self.done,
+            conversation_history=list(self.conversation_history),
+            known_signals=dict(self.known_signals),
+            probe_log=list(self.probe_log),
+            lead_temperature=self._lead_temperature,
+            qualification_confidence=self._qual_confidence,
+            objections_seen=sorted(self._objections_seen, key=lambda item: item.value),
+        )
+
+    def observation(self) -> Observation:
+        return self._observation()
 
     def state(self) -> EnvironmentState:
         return EnvironmentState(

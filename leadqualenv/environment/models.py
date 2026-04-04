@@ -129,3 +129,18 @@ class EnvironmentState:
     probe_log: list[tuple[SignalKey, ProbeQuality]]
     lead_temperature: float = 1.0
     qualification_confidence: float = 0.0
+
+
+@dataclass
+class EnvironmentSnapshot:
+    task: TaskLevel
+    max_turns: int
+    profile: LeadProfile
+    turn_number: int
+    done: bool
+    conversation_history: list[dict[str, str]]
+    known_signals: dict[SignalKey, Optional[str | bool]]
+    probe_log: list[tuple[SignalKey, ProbeQuality]]
+    lead_temperature: float = 1.0
+    qualification_confidence: float = 0.0
+    objections_seen: list[SignalKey] = field(default_factory=list)

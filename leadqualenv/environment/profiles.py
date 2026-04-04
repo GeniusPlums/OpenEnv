@@ -246,9 +246,101 @@ _OPENER_TEMPLATES: dict[str, list[str]] = {
 DEFAULT_OPENER = "Hi, I saw your property listing and wanted to learn more."
 
 
-def sample_profile(task: TaskLevel, seed: int | None = None) -> LeadProfile:
+_PROPERTY_TYPES = tuple(_OPENER_TEMPLATES)
+_LOCATIONS = (
+    "downtown",
+    "midtown",
+    "suburbs",
+    "waterfront",
+    "financial district",
+    "city center",
+    "garden district",
+    "arts district",
+    "old town",
+    "university area",
+    "hillside",
+    "lakeside",
+    "tech park",
+    "market district",
+    "riverfront",
+    "north end",
+)
+
+
+def _generate_profile(task: TaskLevel, index: int) -> LeadProfile:
+    rng = random.Random(f"{task.value}:{index}")
+    personality = rng.choice(list(Personality))
+    property_type = rng.choice(_PROPERTY_TYPES)
+    location = rng.choice(_LOCATIONS)
+
+    if task == TaskLevel.EASY:
+        decision_maker = rng.random() >= 0.15
+        budget = "low" if rng.random() < 0.15 else rng.choice(["medium", "high"])
+        timeline = "immediate"
+        motivation = rng.choice(["self_use", "investment"])
+        return LeadProfile(
+            budget=budget,
+            timeline=timeline,
+            decision_maker=decision_maker,
+            motivation=motivation,
+            personality=personality,
+            property_type=property_type,
+            location=location,
+        )
+
+    if task == TaskLevel.MEDIUM:
+        return LeadProfile(
+            budget=rng.choice(["medium", "high"]),
+            timeline="3-6 months",
+            decision_maker=True,
+            motivation=rng.choice(["self_use", "investment", "exploring"]),
+            personality=personality,
+            property_type=property_type,
+            location=location,
+        )
+
+    decision_maker = rng.random() >= 0.3
+    budget = rng.choice(["low", "medium", "high"])
+    timeline = rng.choice(["immediate", "3-6 months", "6+ months"])
+    motivation = rng.choice(["self_use", "investment", "exploring"])
+
+    surface_budget = budget if rng.random() < 0.15 else None
+    surface_timeline = timeline if rng.random() < 0.15 else None
+    if surface_budget is None and rng.random() < 0.6:
+        surface_budget = rng.choice([candidate for candidate in ("low", "medium", "high") if candidate != budget])
+    if surface_timeline is None and rng.random() < 0.6:
+        surface_timeline = rng.choice([candidate for candidate in ("immediate", "3-6 months", "6+ months") if candidate != timeline])
+
+    return LeadProfile(
+        budget=budget,
+        timeline=timeline,
+        decision_maker=decision_maker,
+        motivation=motivation,
+        personality=personality,
+        property_type=property_type,
+        location=location,
+        surface_budget=surface_budget,
+        surface_timeline=surface_timeline,
+        competitor_mention=rng.random() < 0.35,
+        objection_on=rng.choice([None, SignalKey.BUDGET, SignalKey.TIMELINE, SignalKey.DECISION_MAKER, SignalKey.MOTIVATION]),
+    )
+
+
+def build_profile_pool(task: TaskLevel, generated_count: int = 0) -> list[LeadProfile]:
+    pool = list(TASK_PROFILES[task])
+    for index in range(max(0, generated_count)):
+        pool.append(_generate_profile(task, index))
+    return pool
+
+
+def sample_profile(
+    task: TaskLevel,
+    seed: int | None = None,
+    *,
+    generated_count: int = 0,
+) -> LeadProfile:
     rng = random.Random(seed)
-    return rng.choice(TASK_PROFILES[task])
+    return rng.choice(build_profile_pool(task, generated_count=generated_count))
 
 
 def sample_opener(profile: LeadProfile, seed: int | None = None) -> str:

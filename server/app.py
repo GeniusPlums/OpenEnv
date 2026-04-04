@@ -9,11 +9,11 @@ HTTP_ENV = LeadQualOpenEnv()
 
 
 app = create_app(
-    lambda: HTTP_ENV,
+    lambda: LeadQualOpenEnv(),
     LeadQualActionModel,
     LeadQualObservationModel,
     env_name="leadqualenv",
-    max_concurrent_envs=1,
+    max_concurrent_envs=8,
 )
 
 
