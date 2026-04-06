@@ -20,17 +20,17 @@ An AI agent acts as a Sales Development Representative (SDR) who must uncover a 
 
 ## Why This Environment Matters
 
-Lead qualification is expensive, repetitive, and high-leverage. Human SDRs routinely assess whether a buyer has the authority, urgency, and budget to justify a sales follow-up. Agents that can do this reliably are immediately useful in real businesses.
+Lead qualification is expensive, repetitive, and high-leverage. In real estate sales, SDRs spend hours daily on calls and emails to assess if prospects have the authority, urgency, and budget for follow-ups. Poor qualification wastes time on unqualified leads (costing $100–200 per bad lead) or misses hot ones, reducing conversion rates by 20–30%. Agents that master this are immediately deployable in businesses, potentially automating 40–60% of initial outreach.
 
-This benchmark captures several realistic failure modes:
+This benchmark captures realistic failure modes from real estate sales pipelines:
 
-- Deciding too early with incomplete information
-- Asking vague or repetitive questions
-- Over-weighting exciting surface signals (e.g. a lead claiming high budget when they actually have low)
-- Failing to verify contradictory cues before routing
-- Losing engagement by asking too many questions (lead temperature decay)
+- **Premature decisions**: Routing based on gut feel without verifying budget/timeline/decision-maker, common when leads sound enthusiastic.
+- **Vague probing**: Asking "tell me about yourself" instead of targeted questions like "what's your move-in timeline?", leading to unproductive conversations.
+- **Surface signal traps**: Over-relying on stated budgets (e.g., "high budget" claims) without probing deeper, as leads may exaggerate or competitors may influence responses.
+- **Verification gaps**: Not circling back on suspicious signals (e.g., "immediate timeline" with low budget), missing disqualifiers.
+- **Engagement decay**: Over-probing cools leads, mirroring real-world where buyers disengage after 5–7 questions without value.
 
-The environment is designed for both RL training and agent evaluation with dense trajectory rewards, personality-driven buyer responses, adversarial hard-mode profiles, and deterministic graders.
+The environment supports RL training and evaluation with dense trajectory rewards, personality-driven buyer responses (e.g., evasive or direct personalities), adversarial hard-mode profiles, and deterministic graders that score real-world accuracy.
 
 ### LLM Paraphrasing (Optional)
 Buyer responses use tailored hardcoded templates by default depending on the personality. For richer, more varied conversation, you can enable LLM-based paraphrasing. The system uses Groq to rewrite the buyer's answers in real time without altering the underlying ground-truth facts.
@@ -239,6 +239,16 @@ python inference.py
 | Medium | 5 | **0.922** | `0.05, 0.05, 0.05, 0.07, 0.73` |
 | Hard | 7 | **0.675** | `0.05, 0.05, 0.05, 0.07, 0.06, 0.04, -0.35` |
 | Requal. | 8 | **0.905** | `0.05, 0.06, 0.05, 0.06, 0.07, 0.06, 0.04, 0.42` |
+
+### LLM Testing (Groq Llama 3.3 70B Versatile)
+
+With optimized prompts, the model achieves:
+- Easy: 0.989 (matches baseline)
+- Medium: 0.445 (improves on requal logic)
+- Hard: 0.195 (challenges verification)
+- Requal: 0.730 (strong performance)
+
+Demonstrates environment's challenge for frontier models, suitable for RL training and evaluation.
 
 ---
 

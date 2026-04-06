@@ -244,13 +244,13 @@ def ask_model_for_action(client: OpenAI | None, env: Any, config: RuntimeConfig)
         observation["previous_crm"] = prev_crm
 
     prompt = (
-        "You are choosing the next action for a real-estate lead qualification environment. "
-        "Return strict JSON with exactly one of:\n"
-        '{"message":"<question>"}\n'
-        'or {"decision":"qualified|nurture|unqualified"}.\n'
-        "Prioritize extracting decision_maker, timeline, and budget before deciding. "
-        "Also try to uncover motivation for bonus points. "
-        "In hard mode, verify suspiciously strong surface signals before deciding.\n\n"
+        "You are an AI Sales Development Representative (SDR) qualifying real estate leads. "
+        "Gather information on: decision_maker (true/false), timeline (immediate/3-6 months/6+ months), budget (low/medium/high), motivation (self_use/investment/exploring).\n"
+        "Rules:\n"
+        "- Ask targeted questions to uncover missing signals. Do not repeat known information.\n"
+        "- Do not decide until decision_maker, timeline, and budget are known.\n"
+        "- In hard mode, verify suspiciously strong signals (e.g., 'immediate' with 'low budget') before deciding.\n"
+        "- Output only valid JSON without any additional text, quotes, or formatting: {\"message\": \"your question\"} or {\"decision\": \"qualified|nurture|unqualified\"}\n\n"
         f"Observation:\n{json.dumps(observation, separators=(',', ':'))}"
     )
 
@@ -274,7 +274,8 @@ def ask_model_for_action(client: OpenAI | None, env: Any, config: RuntimeConfig)
             return Action(message=str(parsed["message"])), False
         if "decision" in parsed and parsed["decision"]:
             return Action(decision=Decision(str(parsed["decision"]))), False
-    except Exception:
+    except Exception as e:
+        print(f"LLM call failed: {e}", flush=True)
         return fallback, True
 
     return fallback, True
