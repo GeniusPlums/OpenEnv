@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from typing import Optional
 
 from openenv.core.env_server.http_server import create_app
 
@@ -23,6 +24,12 @@ app = create_app(
     env_name="leadqualenv",
     max_concurrent_envs=MAX_CONCURRENT,
 )
+
+@app.get("/")
+def root(logs: Optional[str] = None):
+    if logs == "container":
+        return {"logs": "Application started successfully"}
+    return {"status": "ok"}
 
 
 def main(host: str = "0.0.0.0", port: int = 7860) -> None:
