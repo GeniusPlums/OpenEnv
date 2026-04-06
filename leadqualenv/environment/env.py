@@ -47,6 +47,8 @@ class LeadQualEnv:
         self._lead_temperature = 1.0
         self._qual_confidence = 0.0
         self._objections_seen: set[SignalKey] = set()
+        self._verification_evasions: set[SignalKey] = set()
+        self._competitor_mentioned = False
 
     def reset(self, seed: int | None = None, generated_profiles: int = 0) -> Observation:
         profile = sample_profile(self.task, seed, generated_count=generated_profiles)
@@ -63,6 +65,8 @@ class LeadQualEnv:
         self._lead_temperature = 1.0
         self._qual_confidence = 0.0
         self._objections_seen = set()
+        self._verification_evasions = set()
+        self._competitor_mentioned = False
 
         opener = sample_opener(profile, seed)
         property_ctx = f"{profile.property_type} in {profile.location}"
@@ -85,6 +89,8 @@ class LeadQualEnv:
         self._lead_temperature = snapshot.lead_temperature
         self._qual_confidence = snapshot.qualification_confidence
         self._objections_seen = set(snapshot.objections_seen)
+        self._verification_evasions = set(snapshot.verification_evasions)
+        self._competitor_mentioned = snapshot.competitor_mentioned
         return self._observation()
 
     def snapshot(self) -> EnvironmentSnapshot:
@@ -101,6 +107,8 @@ class LeadQualEnv:
             lead_temperature=self._lead_temperature,
             qualification_confidence=self._qual_confidence,
             objections_seen=sorted(self._objections_seen, key=lambda item: item.value),
+            competitor_mentioned=self._competitor_mentioned,
+            verification_evasions=sorted(self._verification_evasions, key=lambda item: item.value),
         )
 
     def observation(self) -> Observation:
@@ -117,12 +125,18 @@ class LeadQualEnv:
             probe_log=list(self.probe_log),
             lead_temperature=self._lead_temperature,
             qualification_confidence=self._qual_confidence,
+            verification_evasions=sorted(self._verification_evasions, key=lambda item: item.value),
         )
 
     def _observation(self, property_context: str | None = None) -> Observation:
         ctx = property_context
         if ctx is None and self.profile is not None:
             ctx = f"{self.profile.property_type} in {self.profile.location}"
+
+        previous_crm = None
+        if self.task == TaskLevel.REQUALIFICATION and self.profile is not None:
+            previous_crm = self.profile.previous_crm
+
         return Observation(
             conversation_history=list(self.conversation_history),
             known_signals=dict(self.known_signals),
@@ -132,6 +146,8 @@ class LeadQualEnv:
             lead_temperature=self._lead_temperature,
             qualification_confidence=self._qual_confidence,
             property_context=ctx,
+            competitor_mentioned=self._competitor_mentioned,
+            previous_crm=previous_crm,
         )
 
     def _crm_card(self, status: str) -> dict[str, Any]:
@@ -192,6 +208,7 @@ class LeadQualEnv:
             correct_decision=False,
             personality=self.profile.personality,
             misleading_signals=set(self.profile.surface_signals),
+            profile=self.profile,
         )
         return {
             "task_score": grade.score,
@@ -241,12 +258,18 @@ class LeadQualEnv:
 
         self.conversation_history.append({"role": "assistant", "content": message})
 
+        verification_already_evaded = (probe.signal in self._verification_evasions) if probe.signal else False
+
         response_text, value = generate_response(
             self.profile, probe.signal, probe.quality, self.task,
             lead_temperature=self._lead_temperature,
             objection_already_triggered=probe.signal in self._objections_seen if probe.signal else False,
+            verification_already_evaded=verification_already_evaded,
         )
         self.conversation_history.append({"role": "user", "content": response_text})
+
+        if self.profile.competitor_mention and probe.signal in {SignalKey.TIMELINE, SignalKey.BUDGET}:
+            self._competitor_mentioned = True
 
         objection_triggered = (
             probe.signal is not None
@@ -257,10 +280,19 @@ class LeadQualEnv:
         if objection_triggered:
             self._objections_seen.add(probe.signal)
 
+        verification_evasion_triggered = (
+            probe.signal is not None
+            and probe.quality == ProbeQuality.VERIFIED
+            and probe.signal in self.profile.verification_evasion_signals
+            and not verification_already_evaded
+        )
+        if verification_evasion_triggered:
+            self._verification_evasions.add(probe.signal)
+
         if probe.signal is not None:
             if not objection_triggered:
                 self.probe_log.append((probe.signal, probe.quality))
-            if not objection_triggered and probe.quality in (ProbeQuality.DIRECT, ProbeQuality.VERIFIED):
+            if not objection_triggered and not verification_evasion_triggered and probe.quality in (ProbeQuality.DIRECT, ProbeQuality.VERIFIED):
                 previous_value = self.known_signals.get(probe.signal)
                 self.known_signals[probe.signal] = value
 
@@ -329,6 +361,7 @@ class LeadQualEnv:
             correct_decision=correct,
             personality=self.profile.personality,
             misleading_signals=set(self.profile.surface_signals),
+            profile=self.profile,
         )
         self.done = True
         return StepResult(

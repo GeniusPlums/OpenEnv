@@ -2,13 +2,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional
+from typing import Any, Optional
 
 
 class TaskLevel(str, Enum):
     EASY = "easy"
     MEDIUM = "medium"
     HARD = "hard"
+    REQUALIFICATION = "requalification"
 
 
 class ProbeQuality(str, Enum):
@@ -64,6 +65,10 @@ class LeadProfile:
     surface_timeline: Optional[str] = None
     competitor_mention: bool = False
     objection_on: Optional[SignalKey] = None
+    verification_evasion_signals: frozenset[SignalKey] = field(default_factory=frozenset)
+    previous_qualification: Optional[str] = None
+    motivation_shift: bool = False
+    previous_crm: Optional[dict[str, Any]] = field(default=None, hash=False)
 
     @property
     def true_signals(self) -> dict[SignalKey, str | bool]:
@@ -108,6 +113,8 @@ class Observation:
     lead_temperature: float = 1.0
     qualification_confidence: float = 0.0
     property_context: Optional[str] = None
+    competitor_mentioned: bool = False
+    previous_crm: Optional[dict[str, Any]] = None
 
 
 @dataclass
@@ -129,6 +136,7 @@ class EnvironmentState:
     probe_log: list[tuple[SignalKey, ProbeQuality]]
     lead_temperature: float = 1.0
     qualification_confidence: float = 0.0
+    verification_evasions: list[SignalKey] = field(default_factory=list)
 
 
 @dataclass
@@ -144,3 +152,5 @@ class EnvironmentSnapshot:
     lead_temperature: float = 1.0
     qualification_confidence: float = 0.0
     objections_seen: list[SignalKey] = field(default_factory=list)
+    competitor_mentioned: bool = False
+    verification_evasions: list[SignalKey] = field(default_factory=list)

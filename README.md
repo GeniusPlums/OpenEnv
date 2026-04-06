@@ -40,6 +40,9 @@ export LEADQUALENV_USE_LLM=1
 export GROQ_API_KEY="your_groq_api_key_here"
 ```
 
+> [!IMPORTANT]
+> `GROQ_API_KEY` must be set before server start. Late injection will not enable LLM mode.
+
 ---
 
 ## Environment API
@@ -122,7 +125,10 @@ Adversarial profiles where direct probes reveal **misleading surface values** fo
 - **Objection handling** — Some leads push back on certain questions, blocking the first probe
 - **Surface signal traps** — Some surface signals match reality (requiring the agent to verify anyway), while others are partially misleading (only budget or only timeline is fake)
 
-Task profiles live in [`leadqualenv/environment/profiles.py`](leadqualenv/environment/profiles.py) — 34 curated profiles across the three difficulty levels, with diverse personalities, property types, and locations. The `reset` method also supports infinite procedural profile generation using the `generated_profiles` count.
+### Requalification
+A real-world CRM requalification task. The agent begins the conversation equipped with `previous_crm` information representing what was known (or surfaced) during the last interaction with the lead months ago. Rather than starting from scratch, the agent must selectively re-verify this prior context (some values may have shifted, especially `motivation`), simulating an SDR circling back on a cooled lead.
+
+Task profiles live in [`leadqualenv/environment/profiles.py`](leadqualenv/environment/profiles.py) — curated profiles across the difficulty levels, with diverse personalities, property types, and locations. The `reset` method also supports infinite procedural profile generation using the `generated_profiles` count.
 
 ---
 
@@ -170,16 +176,18 @@ Scoring components:
 | `verification` | Proportion of required signals that were verified |
 | `efficiency` | Penalizes excessive probing beyond expected count |
 | `misleading_detection` | Hard-mode credit for verifying signals that were actually misleading |
+| `motivation_shift` | Requalification credit for uncovering changes in buyer motivation |
 
 Per-task weights:
 
-| Task | Decision | Coverage | Quality | Verification | Efficiency | Misleading |
-|------|----------|----------|---------|--------------|------------|------------|
-| Easy | 0.45 | 0.25 | 0.15 | — | 0.15 | — |
-| Medium | 0.45 | 0.20 | 0.15 | 0.10 | 0.10 | — |
-| Hard | 0.30 | 0.10 | 0.10 | **0.35** | 0.05 | 0.10 |
+| Task | Decision | Coverage | Quality | Verification | Efficiency | Misleading | Motiv. Shift |
+|------|----------|----------|---------|--------------|------------|------------|--------------|
+| Easy | 0.45 | 0.25 | 0.15 | — | 0.15 | — | — |
+| Medium | 0.45 | 0.20 | 0.15 | 0.10 | 0.10 | — | — |
+| Hard | 0.20 | 0.10 | 0.10 | **0.45** | 0.05 | 0.10 | — |
+| Requal. | 0.35 | 0.15 | 0.10 | 0.25 | 0.05 | — | 0.10 |
 
-Hard mode weights verification at **35%** and only grants misleading-detection credit for signals that were actually surface traps, so partial verification is scored fairly.
+Hard mode heavily weights verification (**45%**) and drastically reduces base decision points, forcing the agent to exhibit highly precise verification behavior instead of randomly guessing correct decisions.
 
 ---
 
@@ -229,7 +237,8 @@ python inference.py
 |------|-------|-------|---------|
 | Easy | 5 | **0.989** | `0.05, 0.05, 0.05, 0.07, 0.73` |
 | Medium | 5 | **0.922** | `0.05, 0.05, 0.05, 0.07, 0.73` |
-| Hard | 7 | **0.922** | `0.05, 0.05, 0.05, 0.07, 0.06, 0.04, 0.59` |
+| Hard | 7 | **0.675** | `0.05, 0.05, 0.05, 0.07, 0.06, 0.04, -0.35` |
+| Requal. | 8 | **0.905** | `0.05, 0.06, 0.05, 0.06, 0.07, 0.06, 0.04, 0.42` |
 
 ---
 

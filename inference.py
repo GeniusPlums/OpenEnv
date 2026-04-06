@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import httpx
 import json
 import os
 import re
@@ -11,11 +12,108 @@ from openai import OpenAI
 
 from leadqualenv.environment import Action, Decision, LeadProfile, LeadQualEnv, Personality, SignalKey, TaskLevel
 from leadqualenv.environment.grader import classify_lead
+from leadqualenv.environment.models import ProbeQuality
+
+class RemoteEnv:
+    """HTTP client that wraps the OpenEnv server endpoints."""
+    
+    def __init__(self, base_url: str, task: TaskLevel, seed: int, max_turns: int):
+        self.base_url = base_url.rstrip("/")
+        self.task = task
+        self.seed = seed
+        self.max_turns = max_turns
+        self._obs: dict = {}
+        self.done = False
+        self.turn_number = 0
+        self.known_signals: dict = {}
+        self.probe_log: list = []
+        self._lead_temperature = 1.0
+        self._qual_confidence = 0.0
+        self.conversation_history: list = []
+        self.profile = None  # not available from HTTP
+    
+    def reset(self, seed: int | None = None) -> dict:
+        if seed is not None:
+            self.seed = seed
+        r = httpx.post(
+            f"{self.base_url}/reset",
+            json={"seed": self.seed, "task": self.task.value},
+            timeout=30,
+        )
+        r.raise_for_status()
+        self._obs = r.json()
+        self.done = False
+        self._sync_from_obs(self._obs)
+        return self._obs
+    
+    def step(self, action: Action) -> object:
+        payload = {}
+        if action.message:
+            payload["message"] = action.message
+        else:
+            payload["decision"] = action.decision.value
+        
+        r = httpx.post(
+            f"{self.base_url}/step",
+            json=payload,
+            timeout=30,
+        )
+        r.raise_for_status()
+        data = r.json()
+        self.done = data.get("done", False)
+        self._sync_from_obs(data)
+        
+        # Wrap in StepResult-compatible object
+        return _RemoteStepResult(data)
+    
+    def _sync_from_obs(self, obs: dict) -> None:
+        self.turn_number = obs.get("turn_number", 0)
+        self.known_signals = {
+            SignalKey(k): v 
+            for k, v in obs.get("known_signals", {}).items()
+        }
+        self.probe_log = [
+            (SignalKey(s), ProbeQuality(q)) 
+            for s, q in obs.get("probe_log", [])
+        ]
+        self._lead_temperature = obs.get("lead_temperature", 1.0)
+        self._qual_confidence = obs.get("qualification_confidence", 0.0)
+        self.conversation_history = obs.get("conversation_history", [])
+        self.previous_crm = obs.get("previous_crm")
+    
+    @property
+    def max_turns(self):
+        return self._max_turns
+    
+    @max_turns.setter
+    def max_turns(self, v):
+        self._max_turns = v
+        
+    def _partial_grade(self):
+        return {"task_score": 0.0}
+
+@dataclass  
+class _RemoteStepResult:
+    """Adapter to make HTTP response look like StepResult."""
+    _data: dict
+    
+    @property
+    def reward(self) -> float:
+        return float(self._data.get("reward", 0.0))
+    
+    @property
+    def done(self) -> bool:
+        return bool(self._data.get("done", False))
+    
+    @property
+    def info(self) -> dict:
+        return self._data.get("info", {})
 
 TASKS = {
     "easy": TaskLevel.EASY,
     "medium": TaskLevel.MEDIUM,
     "hard": TaskLevel.HARD,
+    "requalification": TaskLevel.REQUALIFICATION,
 }
 
 
@@ -53,9 +151,22 @@ class EpisodeResult:
     score: float
 
 
-def deterministic_fallback(env: LeadQualEnv) -> Action:
+def deterministic_fallback(env: LeadQualEnv | RemoteEnv) -> Action:
     known = env.known_signals
     task = env.task
+
+    def _is_verified(signal: SignalKey) -> bool:
+        return any(s == signal and q == ProbeQuality.VERIFIED for s, q in env.probe_log)
+
+    if task == TaskLevel.REQUALIFICATION:
+        prev_crm = env.previous_crm if hasattr(env, "previous_crm") else (env._observation().previous_crm if hasattr(env, "_observation") else None)
+        if prev_crm and "known_at_time" in prev_crm:
+            if not _is_verified(SignalKey.BUDGET):
+                return Action(message="Just to double check, is your budget still what you mentioned before?")
+            if not _is_verified(SignalKey.TIMELINE):
+                return Action(message="To confirm what we discussed previously, what is your timeline looking like now?")
+            if not _is_verified(SignalKey.MOTIVATION):
+                return Action(message="Circling back to your previous plans, what is your main reason for this purchase now?")
 
     if known[SignalKey.DECISION_MAKER] is None:
         return Action(message="Are you the person who can make the purchase decision yourself?")
@@ -70,18 +181,10 @@ def deterministic_fallback(env: LeadQualEnv) -> Action:
         return Action(message="What is the main purpose for this purchase — own use or investment?")
 
     if task == TaskLevel.HARD:
-        if known[SignalKey.TIMELINE] == "immediate":
-            return Action(message="Just to verify, you mentioned moving quickly earlier. What is your actual timeline?")
-        if known[SignalKey.BUDGET] in ("high", "medium"):
-            budget_verified = any(
-                s == SignalKey.BUDGET and q.value == "verified"
-                for s, q in env.probe_log
-            )
-            if not budget_verified:
-                return Action(
-                    message="To confirm, you said you could stretch. "
-                    "What budget level are you really targeting?"
-                )
+        if known[SignalKey.TIMELINE] in ("immediate", "3-6 months") and not _is_verified(SignalKey.TIMELINE):
+            return Action(message="Just to verify our earlier discussion, what is your actual timeline?")
+        if known[SignalKey.BUDGET] in ("high", "medium") and not _is_verified(SignalKey.BUDGET):
+            return Action(message="To confirm, you said you could stretch. What budget level are you really targeting?")
 
     if known[SignalKey.DECISION_MAKER] is False:
         return Action(decision=Decision.UNQUALIFIED)
@@ -133,6 +236,10 @@ def ask_model_for_action(client: OpenAI | None, env: LeadQualEnv, config: Runtim
         "lead_temperature": env._lead_temperature,
         "qualification_confidence": env._qual_confidence,
     }
+    prev_crm = env.previous_crm if hasattr(env, "previous_crm") else (env._observation().previous_crm if hasattr(env, "_observation") else None)
+    if prev_crm is not None:
+        observation["previous_crm"] = prev_crm
+    
     prompt = (
         "You are choosing the next action for a real-estate lead qualification environment. "
         "Return strict JSON with exactly one of:\n"
@@ -182,7 +289,11 @@ def format_reward(value: float) -> str:
 
 
 def run_task(task_name: str, task: TaskLevel, client: OpenAI | None, start_time: float, config: RuntimeConfig) -> EpisodeResult:
-    env = LeadQualEnv(task=task, max_turns=config.max_steps)
+    server_url = os.getenv("LEADQUALENV_SERVER_URL", "")
+    if server_url:
+        env = RemoteEnv(server_url, task, config.seed, config.max_steps)
+    else:
+        env = LeadQualEnv(task=task, max_turns=config.max_steps)
     env.reset(seed=config.seed)
 
     rewards: list[float] = []
@@ -208,6 +319,15 @@ def run_task(task_name: str, task: TaskLevel, client: OpenAI | None, start_time:
             action, used_fallback = ask_model_for_action(client, env, config)
             result = env.step(action)
             steps += 1
+            
+            buyer_response = ""
+            try:
+                hist = result.observation.conversation_history if hasattr(result, "observation") else getattr(env, "conversation_history", [])
+                if hist and hist[-1]["role"] == "user":
+                    buyer_response = hist[-1]["content"].replace("\n", " ").strip()
+            except AttributeError:
+                pass
+            
             rewards.append(float(result.reward))
             error = result.info.get("error")
             error_text = str(error) if error is not None else "null"
@@ -218,6 +338,9 @@ def run_task(task_name: str, task: TaskLevel, client: OpenAI | None, start_time:
                 f"done={'true' if result.done else 'false'} error={error_text}{fallback_text}",
                 flush=True,
             )
+            if action.message is not None and buyer_response:
+                print(f"[BUYER] step={steps} response={buyer_response}", flush=True)
+
             if result.done:
                 success = bool(result.info.get("correct_decision", False))
                 raw_score = result.info.get("task_score", 0.0)
@@ -242,6 +365,7 @@ def run_task(task_name: str, task: TaskLevel, client: OpenAI | None, start_time:
 
 
 def main() -> list[EpisodeResult]:
+    os.environ["LEADQUALENV_USE_LLM"] = "0"
     config = load_config()
     client = create_client(config)
     requested_task = os.getenv("LEADQUALENV_TASK")

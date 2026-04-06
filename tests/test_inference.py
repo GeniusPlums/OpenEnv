@@ -32,22 +32,23 @@ def test_inference_log_format():
 
     start_pattern = re.compile(r"^\[START\] task=\w+ env=\w+ model=.+$")
     step_pattern = re.compile(r"^\[STEP\] step=\d+ action=.+ reward=-?\d+\.\d+ done=(true|false) error=\S+.*$")
+    buyer_pattern = re.compile(r"^\[BUYER\] step=\d+ response=.+$")
     end_pattern = re.compile(r"^\[END\] success=(true|false) steps=\d+ score=\d+\.\d+ rewards=.+$")
 
     for line in lines:
         line = line.strip()
         assert (
-            start_pattern.match(line) or step_pattern.match(line) or end_pattern.match(line)
+            start_pattern.match(line) or step_pattern.match(line) or buyer_pattern.match(line) or end_pattern.match(line)
         ), f"Line does not match any expected format: {line!r}"
 
 
-def test_inference_produces_three_tasks():
-    """Default run should produce exactly 3 [START] and 3 [END] lines."""
+def test_inference_produces_four_tasks():
+    """Default run should produce exactly 4 [START] and 4 [END] lines."""
     output = _capture_inference_output()
     starts = [line for line in output.split("\n") if line.strip().startswith("[START]")]
     ends = [line for line in output.split("\n") if line.strip().startswith("[END]")]
-    assert len(starts) == 3, f"Expected 3 [START] lines, got {len(starts)}"
-    assert len(ends) == 3, f"Expected 3 [END] lines, got {len(ends)}"
+    assert len(starts) == 4, f"Expected 4 [START] lines, got {len(starts)}"
+    assert len(ends) == 4, f"Expected 4 [END] lines, got {len(ends)}"
 
 
 def test_inference_scores_in_range():
@@ -62,11 +63,13 @@ def test_inference_scores_in_range():
 
 
 def test_inference_all_tasks_succeed_deterministic():
-    """Deterministic fallback should produce all successes."""
+    """Deterministic fallback should produce successes for all except hard mode."""
     output = _capture_inference_output()
-    for line in output.split("\n"):
-        if line.strip().startswith("[END]"):
-            assert "success=true" in line, f"Expected success=true in deterministic mode: {line!r}"
+    starts = [line for line in output.split("\n") if line.strip().startswith("[START]")]
+    ends = [line for line in output.split("\n") if line.strip().startswith("[END]")]
+    for start, end in zip(starts, ends):
+        if "task=hard" not in start:
+            assert "success=true" in end, f"Expected success=true for non-hard deterministic mode: {end!r}"
 
 
 def test_inference_step_count_reasonable():

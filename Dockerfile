@@ -23,6 +23,7 @@ COPY --from=builder /app/env /app/env
 ENV PATH="/app/env/.venv/bin:$PATH"
 ENV PYTHONPATH="/app/env:$PYTHONPATH"
 ENV PORT=7860
+ENV LEADQUALENV_MAX_CONCURRENT=4
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD curl -fsS http://localhost:${PORT}/health || exit 1

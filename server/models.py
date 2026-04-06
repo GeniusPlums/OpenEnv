@@ -40,6 +40,8 @@ class LeadQualObservationModel(Observation):
     lead_temperature: float = 1.0
     qualification_confidence: float = 0.0
     property_context: str | None = None
+    competitor_mentioned: bool = False
+    previous_crm: dict[str, Any] | None = None
     reward_detail: LeadQualRewardModel | None = None
     info: dict[str, Any] = Field(default_factory=dict)
 
@@ -53,3 +55,4 @@ class LeadQualStateModel(State):
     probe_log: list[tuple[str, str]] = Field(default_factory=list)
     lead_temperature: float = 1.0
     qualification_confidence: float = 0.0
+    step_count: int = 0

@@ -42,7 +42,12 @@ def test_hard_episode_requires_verification_to_overwrite_surface_signal():
         assert env.known_signals[SignalKey.BUDGET] == profile.surface_budget
 
     env.step(Action(message="To confirm, you said you could stretch. What budget level are you really targeting?"))
+    if SignalKey.BUDGET in profile.verification_evasion_signals:
+        env.step(Action(message="I still need to confirm precisely, what budget level are you really targeting?"))
+
     env.step(Action(message="Just to verify, you mentioned moving quickly earlier. What is your actual timeline?"))
+    if SignalKey.TIMELINE in profile.verification_evasion_signals:
+        env.step(Action(message="To be absolutely sure, I need to confirm what is your actual timeline?"))
 
     assert env.known_signals[SignalKey.BUDGET] == profile.budget
     assert env.known_signals[SignalKey.TIMELINE] == profile.timeline
@@ -201,3 +206,61 @@ def test_episode_on_all_difficulty_levels():
         assert result.done is True
         assert result.info["correct_decision"] is True
         assert 0.0 <= result.info["task_score"] <= 1.0
+
+def test_snapshot_restore_round_trip():
+    env = LeadQualEnv(TaskLevel.EASY)
+    env.reset(seed=42)
+    
+    env.step(Action(message="Are you the person who can make the purchase decision yourself?"))
+    env.step(Action(message="When are you planning to move, specifically?"))
+    
+    snap = env.snapshot()
+    
+    # Mutate the environment further
+    env.step(Action(message="What budget range are you looking at exactly?"))
+    
+    # Restore from snapshot
+    env2 = LeadQualEnv(TaskLevel.EASY)
+    env2.restore(snap)
+    
+    # State should match pre-mutation snapshot
+    assert env2.turn_number == 2
+    assert env2.known_signals[SignalKey.DECISION_MAKER] is not None
+    assert env2.known_signals[SignalKey.TIMELINE] is not None
+    assert env2.known_signals[SignalKey.BUDGET] is None  # not yet asked
+    assert len(env2.probe_log) == 2
+    assert env2._lead_temperature == snap.lead_temperature
+    assert env2._qual_confidence == snap.qualification_confidence
+    
+    # Continuing from restored state should work
+    result = env2.step(Action(message="What budget range are you looking at exactly?"))
+    assert result.reward != 0.0
+    assert env2.turn_number == 3
+
+def test_generated_profiles_are_usable():
+    """Procedurally generated profiles should produce valid episodes."""
+    from leadqualenv.environment.profiles import build_profile_pool
+    from leadqualenv.environment.grader import classify_lead
+    
+    for task_level in TaskLevel:
+        pool = build_profile_pool(task_level, generated_count=5)
+        # Verify all generated profiles have valid fields
+        for profile in pool:
+            decision = classify_lead(profile)
+            assert decision in (Decision.QUALIFIED, Decision.NURTURE, Decision.UNQUALIFIED)
+            assert profile.budget in ("low", "medium", "high")
+            assert profile.timeline in ("immediate", "3-6 months", "6+ months")
+            assert isinstance(profile.decision_maker, bool)
+        
+        # Run a full episode on a generated profile
+        env = LeadQualEnv(task_level, max_turns=10)
+        env.reset(seed=99, generated_profiles=3)
+        assert env.profile is not None
+        
+        # Basic episode should complete without error
+        env.step(Action(message="Are you the person who can make the purchase decision yourself?"))
+        env.step(Action(message="When are you planning to move, specifically?"))
+        env.step(Action(message="What budget range are you looking at exactly?"))
+        result = env.step(Action(decision=classify_lead(env.profile)))
+        assert result.done
+

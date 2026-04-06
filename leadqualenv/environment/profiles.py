@@ -126,6 +126,7 @@ TASK_PROFILES: dict[TaskLevel, list[LeadProfile]] = {
             motivation="exploring", personality=Personality.EVASIVE,
             property_type="apartment", location="downtown",
             surface_budget="high", surface_timeline="immediate",
+            verification_evasion_signals=frozenset({SignalKey.BUDGET}),
         ),
         # 2. Surface: high/immediate → True: medium/3-6, DM → nurture
         LeadProfile(
@@ -133,6 +134,7 @@ TASK_PROFILES: dict[TaskLevel, list[LeadProfile]] = {
             motivation="investment", personality=Personality.FRIENDLY,
             property_type="villa", location="suburbs",
             surface_budget="high", surface_timeline="immediate",
+            verification_evasion_signals=frozenset({SignalKey.TIMELINE}),
         ),
         # 3. Surface: medium/immediate → True: low/3-6, not DM → unqualified
         LeadProfile(
@@ -140,6 +142,7 @@ TASK_PROFILES: dict[TaskLevel, list[LeadProfile]] = {
             motivation="self_use", personality=Personality.VERBOSE,
             property_type="condo", location="waterfront",
             surface_budget="medium", surface_timeline="immediate",
+            verification_evasion_signals=frozenset({SignalKey.BUDGET, SignalKey.TIMELINE}),
         ),
         # 4. Surface: high/immediate → True: high/3-6, DM → nurture (budget is real, timeline is fake)
         LeadProfile(
@@ -147,6 +150,7 @@ TASK_PROFILES: dict[TaskLevel, list[LeadProfile]] = {
             motivation="self_use", personality=Personality.DIRECT,
             property_type="townhouse", location="midtown",
             surface_timeline="immediate",
+            verification_evasion_signals=frozenset({SignalKey.TIMELINE}),
         ),
         # 5. Surface: high/immediate → True: low/immediate, DM → unqualified (timeline real, budget fake)
         LeadProfile(
@@ -154,13 +158,15 @@ TASK_PROFILES: dict[TaskLevel, list[LeadProfile]] = {
             motivation="self_use", personality=Personality.TERSE,
             property_type="apartment", location="east side",
             surface_budget="high",
+            verification_evasion_signals=frozenset({SignalKey.BUDGET}),
         ),
-        # 6. Surface: high/immediate → True: high/immediate, DM → qualified (surface matches reality!)
+        # 6. Surface: medium/immediate -> True: high/immediate, DM -> qualified (budget is misleading)
         LeadProfile(
             budget="high", timeline="immediate", decision_maker=True,
             motivation="investment", personality=Personality.FRIENDLY,
             property_type="penthouse", location="financial district",
-            surface_budget="high", surface_timeline="immediate",
+            surface_budget="medium",
+            verification_evasion_signals=frozenset({SignalKey.BUDGET}),
         ),
         # 7. Surface: medium/immediate → True: medium/6+, DM → unqualified (budget real, timeline fake)
         LeadProfile(
@@ -168,6 +174,7 @@ TASK_PROFILES: dict[TaskLevel, list[LeadProfile]] = {
             motivation="exploring", personality=Personality.EVASIVE,
             property_type="apartment", location="university area",
             surface_timeline="immediate",
+            verification_evasion_signals=frozenset({SignalKey.TIMELINE}),
         ),
         # 8. Surface: high/immediate → True: medium/3-6, not DM → unqualified
         LeadProfile(
@@ -176,6 +183,7 @@ TASK_PROFILES: dict[TaskLevel, list[LeadProfile]] = {
             property_type="duplex", location="north end",
             surface_budget="high", surface_timeline="immediate",
             competitor_mention=True,
+            verification_evasion_signals=frozenset({SignalKey.BUDGET, SignalKey.TIMELINE}),
         ),
         # 9. Surface: high → True: high, but timeline=3-6, DM, objection on budget → nurture
         LeadProfile(
@@ -184,13 +192,14 @@ TASK_PROFILES: dict[TaskLevel, list[LeadProfile]] = {
             property_type="villa", location="hillside",
             surface_timeline="immediate",
             objection_on=SignalKey.BUDGET,
+            verification_evasion_signals=frozenset({SignalKey.TIMELINE}),
         ),
-        # 10. Surface: medium/immediate → True: medium/immediate, not DM → unqualified
+        # 10. Surface: high/3-6 months -> True: medium/immediate, not DM -> unqualified
         LeadProfile(
             budget="medium", timeline="immediate", decision_maker=False,
             motivation="self_use", personality=Personality.TERSE,
             property_type="apartment", location="lakeside",
-            surface_budget="medium", surface_timeline="immediate",
+            surface_budget="high", surface_timeline="3-6 months",
         ),
         # 11. Surface: high/immediate → True: low/6+, DM → unqualified
         LeadProfile(
@@ -206,6 +215,44 @@ TASK_PROFILES: dict[TaskLevel, list[LeadProfile]] = {
             motivation="self_use", personality=Personality.DIRECT,
             property_type="townhouse", location="garden district",
             surface_budget="high",
+            verification_evasion_signals=frozenset({SignalKey.BUDGET}),
+        ),
+    ],
+    TaskLevel.REQUALIFICATION: [
+        LeadProfile(
+            budget="high", timeline="immediate", decision_maker=True,
+            motivation="self_use", personality=Personality.DIRECT,
+            property_type="townhouse", location="downtown",
+            previous_qualification="nurture", motivation_shift=True,
+            previous_crm={"status": "nurture", "last_contact": "3 months ago", "known_at_time": {"budget": "high", "timeline": "3-6 months", "decision_maker": True, "motivation": "investment"}},
+        ),
+        LeadProfile(
+            budget="medium", timeline="6+ months", decision_maker=True,
+            motivation="investment", personality=Personality.EVASIVE,
+            property_type="apartment", location="suburbs",
+            previous_qualification="nurture", motivation_shift=False,
+            previous_crm={"status": "nurture", "last_contact": "3 months ago", "known_at_time": {"budget": "medium", "timeline": "3-6 months", "decision_maker": True, "motivation": "investment"}},
+        ),
+        LeadProfile(
+            budget="high", timeline="immediate", decision_maker=False,
+            motivation="self_use", personality=Personality.VERBOSE,
+            property_type="villa", location="waterfront",
+            previous_qualification="nurture", motivation_shift=False,
+            previous_crm={"status": "nurture", "last_contact": "3 months ago", "known_at_time": {"budget": "high", "timeline": "3-6 months", "decision_maker": True, "motivation": "self_use"}},
+        ),
+        LeadProfile(
+            budget="medium", timeline="immediate", decision_maker=True,
+            motivation="investment", personality=Personality.FRIENDLY,
+            property_type="condo", location="city center",
+            previous_qualification="nurture", motivation_shift=True,
+            previous_crm={"status": "nurture", "last_contact": "3 months ago", "known_at_time": {"budget": "medium", "timeline": "3-6 months", "decision_maker": True, "motivation": "exploring"}},
+        ),
+        LeadProfile(
+            budget="medium", timeline="3-6 months", decision_maker=True,
+            motivation="exploring", personality=Personality.TERSE,
+            property_type="studio", location="arts district",
+            previous_qualification="nurture", motivation_shift=False,
+            previous_crm={"status": "nurture", "last_contact": "3 months ago", "known_at_time": {"budget": "medium", "timeline": "3-6 months", "decision_maker": True, "motivation": "exploring"}},
         ),
     ],
 }
@@ -299,6 +346,34 @@ def _generate_profile(task: TaskLevel, index: int) -> LeadProfile:
             location=location,
         )
 
+    if task == TaskLevel.REQUALIFICATION:
+        motivation_shift = rng.random() > 0.5
+        timeline_choice = rng.choice(["immediate", "3-6 months", "6+ months"])
+        motivation_val = rng.choice(["self_use", "investment", "exploring"])
+        prev_mot = "investment" if (motivation_shift and motivation_val == "self_use") else ("self_use" if motivation_shift else motivation_val)
+        budget = rng.choice(["medium", "high"])
+        return LeadProfile(
+            budget=budget,
+            timeline=timeline_choice,
+            decision_maker=rng.random() > 0.2,
+            motivation=motivation_val,
+            personality=personality,
+            property_type=property_type,
+            location=location,
+            previous_qualification="nurture",
+            motivation_shift=motivation_shift,
+            previous_crm={
+                "status": "nurture",
+                "last_contact": "3 months ago",
+                "known_at_time": {
+                    "budget": budget,
+                    "timeline": "3-6 months",
+                    "decision_maker": True,
+                    "motivation": prev_mot,
+                }
+            }
+        )
+
     decision_maker = rng.random() >= 0.3
     budget = rng.choice(["low", "medium", "high"])
     timeline = rng.choice(["immediate", "3-6 months", "6+ months"])
@@ -345,5 +420,7 @@ def sample_profile(
 
 def sample_opener(profile: LeadProfile, seed: int | None = None) -> str:
     rng = random.Random(seed)
+    if profile.previous_qualification is not None:
+        return f"Hi, we spoke a few months ago about the {profile.property_type}."
     templates = _OPENER_TEMPLATES.get(profile.property_type, [DEFAULT_OPENER])
     return rng.choice(templates)

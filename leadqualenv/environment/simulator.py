@@ -250,6 +250,7 @@ def generate_response(
     *,
     lead_temperature: float = 1.0,
     objection_already_triggered: bool = False,
+    verification_already_evaded: bool = False,
 ) -> tuple[str, str | bool | None]:
     if probe_quality == ProbeQuality.IRRELEVANT or signal is None:
         return "Could you help me understand what you need from me?", None
@@ -274,6 +275,15 @@ def generate_response(
         and not objection_already_triggered
     ):
         return OBJECTION_RESPONSES.get(signal, "I'd rather not answer that right now."), None
+
+    if (
+        probe_quality == ProbeQuality.VERIFIED
+        and signal in profile.verification_evasion_signals
+        and not verification_already_evaded
+    ):
+        vague_value = resolve_signal(profile, signal, ProbeQuality.VAGUE, task)
+        vague_text = paraphrase_signal(profile, signal, vague_value, ProbeQuality.VAGUE)
+        return vague_text, None
 
     value = resolve_signal(profile, signal, probe_quality, task)
     text = paraphrase_signal(profile, signal, value, probe_quality)

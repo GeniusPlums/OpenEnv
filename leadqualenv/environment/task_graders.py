@@ -4,6 +4,15 @@ from dataclasses import dataclass
 
 from .models import Personality, ProbeQuality, SignalKey, TaskLevel
 
+import math
+
+def _efficiency_score(probe_count: int, max_expected: int) -> float:
+    if probe_count <= max_expected:
+        return 1.0
+    excess = probe_count - max_expected
+    # Decays to ~0.22 at 2x expected, ~0.05 at 3x — still differentiates
+    return round(math.exp(-0.15 * excess), 4)
+
 # Personality difficulty multiplier: harder personalities earn slightly more credit
 PERSONALITY_DIFFICULTY: dict[Personality, float] = {
     Personality.DIRECT: 1.0,
@@ -29,12 +38,20 @@ TASK_WEIGHTS: dict[TaskLevel, dict[str, float]] = {
         "verification": 0.10,
     },
     TaskLevel.HARD: {
-        "correct_decision": 0.30,
+        "correct_decision": 0.20,
         "signal_coverage": 0.10,
         "probe_quality": 0.10,
-        "verification": 0.35,
+        "verification": 0.45,
         "efficiency": 0.05,
         "misleading_detection": 0.10,
+    },
+    TaskLevel.REQUALIFICATION: {
+        "correct_decision": 0.35,
+        "signal_coverage": 0.15,
+        "probe_quality": 0.10,
+        "verification": 0.25,
+        "efficiency": 0.05,
+        "motivation_shift": 0.10,
     },
 }
 
@@ -74,6 +91,7 @@ def grade_episode(
     *,
     personality: Personality | None = None,
     misleading_signals: set[SignalKey] | None = None,
+    profile: getattr(__import__("leadqualenv.environment.models", fromlist=["LeadProfile"]), "LeadProfile") | None = None, # type: ignore
 ) -> TaskGrade:
     weights = TASK_WEIGHTS[task]
 
@@ -94,7 +112,7 @@ def grade_episode(
 
     # Efficiency: penalize excessive probing
     max_expected_probes = 4 if task == TaskLevel.EASY else 5 if task == TaskLevel.MEDIUM else 7
-    efficiency = max(0.0, 1.0 - max(0, len(probe_log) - max_expected_probes) * 0.15)
+    efficiency = _efficiency_score(len(probe_log), max_expected_probes)
 
     misleading_detection = 0.0
     if task == TaskLevel.HARD:
@@ -115,6 +133,11 @@ def grade_episode(
             # Full credit if there are no misleading signals in this profile
             misleading_detection = 1.0
 
+    motivation_shift = 0.0
+    if task == TaskLevel.REQUALIFICATION:
+        if profile is not None and profile.motivation_shift and known_signals.get(SignalKey.MOTIVATION) is not None:
+            motivation_shift = 1.0
+
     components = {
         "correct_decision": 1.0 if correct_decision else 0.0,
         "signal_coverage": round(coverage, 4),
@@ -122,6 +145,7 @@ def grade_episode(
         "verification": round(verification, 4),
         "efficiency": round(efficiency, 4),
         "misleading_detection": round(misleading_detection, 4),
+        "motivation_shift": round(motivation_shift, 4),
     }
     raw_score = sum(weights.get(key, 0.0) * components[key] for key in components)
 

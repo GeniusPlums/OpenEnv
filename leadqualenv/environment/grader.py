@@ -93,6 +93,9 @@ def classify_lead(profile: LeadProfile) -> Decision:
     if profile.timeline == "3-6 months":
         return Decision.NURTURE
 
+    if profile.timeline == "6+ months":
+        return Decision.NURTURE if profile.budget in ("medium", "high") else Decision.UNQUALIFIED
+
     return Decision.UNQUALIFIED
 
 

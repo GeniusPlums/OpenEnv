@@ -1,0 +1,37 @@
+FAILURES ===================================
+_____ test_hard_episode_requires_verification_to_overwrite_surface_signal _____
+
+    def test_hard_episode_requires_verification_to_overwrite_surface_signal():
+        env = LeadQualEnv(TaskLevel.HARD)
+        env.reset(seed=0)
+    
+        env.step(Action(message="Are you the person who can make the purchase decision yourself?"))
+        env.step(Action(message="When are you planning to move, specifically?"))
+        env.step(Action(message="What budget range are you looking at exactly?"))
+    
+        # In hard mode, direct probes may return surface (misleading) values
+        profile = env.profile
+        if profile.surface_timeline is not None:
+            assert env.known_signals[SignalKey.TIMELINE] == profile.surface_timeline
+        if profile.surface_budget is not None:
+            assert env.known_signals[SignalKey.BUDGET] == profile.surface_budget
+    
+        env.step(Action(message="To confirm, you said you could stretch. What budget level are you really targeting?"))
+        if SignalKey.BUDGET in profile.verification_evasion_signals:
+            env.step(Action(message="I still need to confirm precisely, what budget level are you really targeting?"))
+    
+        env.step(Action(message="Just to verify, you mentioned moving quickly earlier. What is your actual timeline?"))
+        if SignalKey.TIMELINE in profile.verification_evasion_signals:
+            env.step(Action(message="To be absolutely sure, what is your actual timeline?"))
+    
+        assert env.known_signals[SignalKey.BUDGET] == profile.budget
+>       assert env.known_signals[SignalKey.TIMELINE] == profile.timeline
+E       AssertionError: assert 'immediate' == '6+ months'
+E         
+E         - 6+ months
+E         + immediate
+
+tests\test_episodes.py:53: AssertionError
+=========================== short test summary info ===========================
+FAILED tests/test_episodes.py::test_hard_episode_requires_verification_to_overwrite_surface_signal
+======================== 1 failed, 64 passed in 2.86s =========================

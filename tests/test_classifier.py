@@ -27,9 +27,9 @@ def test_high_budget_immediate_dm_is_qualified():
     assert classify_lead(profile) == Decision.QUALIFIED
 
 
-def test_six_plus_months_is_unqualified():
+def test_six_plus_months_high_budget_dm_is_nurture():
     profile = LeadProfile("high", "6+ months", True, "exploring")
-    assert classify_lead(profile) == Decision.UNQUALIFIED
+    assert classify_lead(profile) == Decision.NURTURE
 
 
 def test_low_budget_non_dm_is_unqualified():

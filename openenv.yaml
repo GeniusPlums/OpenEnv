@@ -1,5 +1,5 @@
 name: LeadQualEnv
-version: 2.2.0
+version: 2.3.0
 entrypoint: server.leadqualenv_environment:LeadQualOpenEnv
 description: >-
   Deterministic real-estate outbound lead qualification benchmark.
@@ -7,7 +7,7 @@ description: >-
   budget, timeline, and decision authority before routing leads.
   Features adversarial hard-mode with misleading surface signals,
   personality-driven buyer responses, competitor pressure mechanics,
-  and lead temperature decay.
+  lead temperature decay, and a real-world CRM requalification task.
 author: Anish Adamane
 license: MIT
 tags:
@@ -19,16 +19,18 @@ tags:
 metadata:
   domain: real_estate_sales
   max_turns: 10
-  reward_range: [-0.50, 0.80]
+  reward_range: [-1.0, 1.1]
   episode_length: 10
   tasks:
     - easy
     - medium
     - hard
+    - requalification
   task_progression:
     easy: direct qualification with straightforward buyers
     medium: nurture vs qualify ambiguity with delayed timelines
     hard: misleading surface signals requiring verification probes
+    requalification: re-engaging nurture leads with potentially changed circumstances
   decision_labels:
     - qualified
     - nurture
@@ -42,6 +44,8 @@ metadata:
     - lead_temperature
     - qualification_confidence
     - property_context
+    - competitor_mentioned
+    - previous_crm
   action_fields:
     - message
     - decision
