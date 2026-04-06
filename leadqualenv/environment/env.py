@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 from dataclasses import asdict
-from typing import Any
+from typing import Any, cast
 
 from .grader import classify_lead, classify_probe, is_generic_opener
 from .models import (
     Action,
     Decision,
-    EnvironmentState,
     EnvironmentSnapshot,
+    EnvironmentState,
     InsufficientSignalsError,
     InvalidActionError,
     LeadProfile,
@@ -278,6 +278,7 @@ class LeadQualEnv:
             and probe.signal not in self._objections_seen
         )
         if objection_triggered:
+            assert probe.signal is not None
             self._objections_seen.add(probe.signal)
 
         verification_evasion_triggered = (
@@ -287,7 +288,7 @@ class LeadQualEnv:
             and not verification_already_evaded
         )
         if verification_evasion_triggered:
-            self._verification_evasions.add(probe.signal)
+            self._verification_evasions.add(probe.signal)  # type: ignore[arg-type]
 
         if probe.signal is not None:
             if not objection_triggered:
@@ -306,6 +307,7 @@ class LeadQualEnv:
         reward += cold_lead_penalty(self.turn_number, task=self.task)
 
         done = self.turn_number >= self.max_turns
+        partial_grade = {}
         if done:
             self.done = True
             reward += NO_DECISION_PENALTY

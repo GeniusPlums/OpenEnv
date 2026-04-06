@@ -1,11 +1,11 @@
 from __future__ import annotations
 
+import os
+
 from openenv.core.env_server.http_server import create_app
 
 from .leadqualenv_environment import LeadQualOpenEnv
 from .models import LeadQualActionModel, LeadQualObservationModel
-
-import os
 
 os.environ.setdefault(
     "LEADQUALENV_USE_LLM",

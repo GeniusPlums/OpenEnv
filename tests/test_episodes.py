@@ -210,19 +210,19 @@ def test_episode_on_all_difficulty_levels():
 def test_snapshot_restore_round_trip():
     env = LeadQualEnv(TaskLevel.EASY)
     env.reset(seed=42)
-    
+
     env.step(Action(message="Are you the person who can make the purchase decision yourself?"))
     env.step(Action(message="When are you planning to move, specifically?"))
-    
+
     snap = env.snapshot()
-    
+
     # Mutate the environment further
     env.step(Action(message="What budget range are you looking at exactly?"))
-    
+
     # Restore from snapshot
     env2 = LeadQualEnv(TaskLevel.EASY)
     env2.restore(snap)
-    
+
     # State should match pre-mutation snapshot
     assert env2.turn_number == 2
     assert env2.known_signals[SignalKey.DECISION_MAKER] is not None
@@ -231,7 +231,7 @@ def test_snapshot_restore_round_trip():
     assert len(env2.probe_log) == 2
     assert env2._lead_temperature == snap.lead_temperature
     assert env2._qual_confidence == snap.qualification_confidence
-    
+
     # Continuing from restored state should work
     result = env2.step(Action(message="What budget range are you looking at exactly?"))
     assert result.reward != 0.0
@@ -239,9 +239,9 @@ def test_snapshot_restore_round_trip():
 
 def test_generated_profiles_are_usable():
     """Procedurally generated profiles should produce valid episodes."""
-    from leadqualenv.environment.profiles import build_profile_pool
     from leadqualenv.environment.grader import classify_lead
-    
+    from leadqualenv.environment.profiles import build_profile_pool
+
     for task_level in TaskLevel:
         pool = build_profile_pool(task_level, generated_count=5)
         # Verify all generated profiles have valid fields
@@ -251,12 +251,12 @@ def test_generated_profiles_are_usable():
             assert profile.budget in ("low", "medium", "high")
             assert profile.timeline in ("immediate", "3-6 months", "6+ months")
             assert isinstance(profile.decision_maker, bool)
-        
+
         # Run a full episode on a generated profile
         env = LeadQualEnv(task_level, max_turns=10)
         env.reset(seed=99, generated_profiles=3)
         assert env.profile is not None
-        
+
         # Basic episode should complete without error
         env.step(Action(message="Are you the person who can make the purchase decision yourself?"))
         env.step(Action(message="When are you planning to move, specifically?"))

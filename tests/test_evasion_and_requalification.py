@@ -1,17 +1,15 @@
-import pytest
 
-from leadqualenv.environment import Action, LeadQualEnv, TaskLevel, SignalKey
-from leadqualenv.environment.models import Decision, Personality, LeadProfile
+from leadqualenv.environment import Action, LeadQualEnv, SignalKey, TaskLevel
+from leadqualenv.environment.models import LeadProfile, ProbeQuality
 from leadqualenv.environment.profiles import TASK_PROFILES
 from leadqualenv.environment.simulator import generate_response
-from leadqualenv.environment.models import ProbeQuality
 
 
 def test_verification_evasion_fires_once_per_signal():
     env = LeadQualEnv(task=TaskLevel.HARD)
-    
+
     # Create profile with known evasion
-    obs = env.reset()
+    env.reset()
     env.profile = LeadProfile(
         budget="low",
         timeline="6+ months",
@@ -19,9 +17,9 @@ def test_verification_evasion_fires_once_per_signal():
         motivation="self_use",
         verification_evasion_signals=frozenset({SignalKey.BUDGET, SignalKey.TIMELINE})
     )
-    
+
     # 1. Direct probe for budget
-    result = env.step(Action(message="What is your exact budget?"))
+    env.step(Action(message="What is your exact budget?"))
     # Agent hasn't verified, just vaguely evaded if the probe parser classifies it as VERIFIED or DIRECT
     # Let's bypass parser and test generation directly
     response, val = generate_response(
@@ -29,7 +27,7 @@ def test_verification_evasion_fires_once_per_signal():
         verification_already_evaded=False
     )
     assert val is None, "Should evade and return None on first verified probe"
-    
+
 def test_verification_evasion_does_not_fire_when_not_configured():
     profile = LeadProfile(
         budget="low",
@@ -74,7 +72,7 @@ def test_requalification_grader_rewards_motivation_shift():
         motivation="self_use",
         motivation_shift=True
     )
-    
+
     # Positive case: motivation was extracted
     grade1 = grade_episode(
         task=TaskLevel.REQUALIFICATION,
@@ -84,7 +82,7 @@ def test_requalification_grader_rewards_motivation_shift():
         profile=profile,
     )
     assert grade1.components["motivation_shift"] > 0, "Motivation shift should be rewarded if detected"
-    
+
     # Negative case: motivation not extracted
     grade2 = grade_episode(
         task=TaskLevel.REQUALIFICATION,

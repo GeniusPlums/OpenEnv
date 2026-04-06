@@ -1,10 +1,10 @@
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 from .models import Personality, ProbeQuality, SignalKey, TaskLevel
 
-import math
 
 def _efficiency_score(probe_count: int, max_expected: int) -> float:
     if probe_count <= max_expected:
@@ -117,7 +117,7 @@ def grade_episode(
     misleading_detection = 0.0
     if task == TaskLevel.HARD:
         direct_signals = {signal for signal, quality in probe_log if quality == ProbeQuality.DIRECT}
-        
+
         # The traps we expect the agent to detect
         if misleading_signals is not None and len(misleading_signals) > 0:
             target_traps = misleading_signals & REQUIRED_SIGNALS

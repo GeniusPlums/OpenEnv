@@ -1,38 +1,55 @@
 from __future__ import annotations
 
-import httpx
 import json
 import os
 import re
 import time
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Dict, List, cast
 
+import httpx
 from openai import OpenAI
 
 from leadqualenv.environment import Action, Decision, LeadProfile, LeadQualEnv, Personality, SignalKey, TaskLevel
 from leadqualenv.environment.grader import classify_lead
 from leadqualenv.environment.models import ProbeQuality
 
+@dataclass
+class _RemoteStepResult:
+    """Adapter to make HTTP response look like StepResult."""
+    _data: Dict[str, Any]
+
+    @property
+    def reward(self) -> float:
+        return float(self._data.get("reward", 0.0))
+
+    @property
+    def done(self) -> bool:
+        return bool(self._data.get("done", False))
+
+    @property
+    def info(self) -> Dict[str, Any]:
+        return self._data.get("info", {})
+
 class RemoteEnv:
     """HTTP client that wraps the OpenEnv server endpoints."""
-    
+
     def __init__(self, base_url: str, task: TaskLevel, seed: int, max_turns: int):
         self.base_url = base_url.rstrip("/")
         self.task = task
         self.seed = seed
         self.max_turns = max_turns
-        self._obs: dict = {}
+        self._obs: Dict[str, Any] = {}
         self.done = False
         self.turn_number = 0
-        self.known_signals: dict = {}
-        self.probe_log: list = []
+        self.known_signals: Dict[SignalKey, Any] = {}
+        self.probe_log: List[tuple[SignalKey, ProbeQuality]] = []
         self._lead_temperature = 1.0
         self._qual_confidence = 0.0
-        self.conversation_history: list = []
+        self.conversation_history: List[Dict[str, str]] = []
         self.profile = None  # not available from HTTP
-    
-    def reset(self, seed: int | None = None) -> dict:
+
+    def reset(self, seed: int | None = None) -> Dict[str, Any]:
         if seed is not None:
             self.seed = seed
         r = httpx.post(
@@ -41,18 +58,19 @@ class RemoteEnv:
             timeout=30,
         )
         r.raise_for_status()
-        self._obs = r.json()
+        self._obs = cast(Dict[str, Any], r.json())
         self.done = False
         self._sync_from_obs(self._obs)
         return self._obs
-    
-    def step(self, action: Action) -> object:
+
+    def step(self, action: Action) -> _RemoteStepResult:
         payload = {}
         if action.message:
             payload["message"] = action.message
         else:
+            assert action.decision is not None
             payload["decision"] = action.decision.value
-        
+
         r = httpx.post(
             f"{self.base_url}/step",
             json=payload,
@@ -62,52 +80,37 @@ class RemoteEnv:
         data = r.json()
         self.done = data.get("done", False)
         self._sync_from_obs(data)
-        
+
         # Wrap in StepResult-compatible object
         return _RemoteStepResult(data)
-    
-    def _sync_from_obs(self, obs: dict) -> None:
+
+    def _sync_from_obs(self, obs: Dict[str, Any]) -> None:
         self.turn_number = obs.get("turn_number", 0)
         self.known_signals = {
-            SignalKey(k): v 
+            SignalKey(k): v
             for k, v in obs.get("known_signals", {}).items()
         }
         self.probe_log = [
-            (SignalKey(s), ProbeQuality(q)) 
+            (SignalKey(s), ProbeQuality(q))
             for s, q in obs.get("probe_log", [])
         ]
         self._lead_temperature = obs.get("lead_temperature", 1.0)
         self._qual_confidence = obs.get("qualification_confidence", 0.0)
         self.conversation_history = obs.get("conversation_history", [])
         self.previous_crm = obs.get("previous_crm")
-    
+
     @property
     def max_turns(self):
         return self._max_turns
-    
+
     @max_turns.setter
     def max_turns(self, v):
         self._max_turns = v
-        
-    def _partial_grade(self):
+
+    def _partial_grade(self) -> Dict[str, float]:
         return {"task_score": 0.0}
 
-@dataclass  
-class _RemoteStepResult:
-    """Adapter to make HTTP response look like StepResult."""
-    _data: dict
-    
-    @property
-    def reward(self) -> float:
-        return float(self._data.get("reward", 0.0))
-    
-    @property
-    def done(self) -> bool:
-        return bool(self._data.get("done", False))
-    
-    @property
-    def info(self) -> dict:
-        return self._data.get("info", {})
+
 
 TASKS = {
     "easy": TaskLevel.EASY,
@@ -220,7 +223,7 @@ def strip_markdown_json(text: str) -> str:
     return text
 
 
-def ask_model_for_action(client: OpenAI | None, env: LeadQualEnv, config: RuntimeConfig) -> tuple[Action, bool]:
+def ask_model_for_action(client: OpenAI | None, env: Any, config: RuntimeConfig) -> tuple[Action, bool]:
     """Returns (action, used_fallback)."""
     fallback = deterministic_fallback(env)
     if client is None:
@@ -239,7 +242,7 @@ def ask_model_for_action(client: OpenAI | None, env: LeadQualEnv, config: Runtim
     prev_crm = env.previous_crm if hasattr(env, "previous_crm") else (env._observation().previous_crm if hasattr(env, "_observation") else None)
     if prev_crm is not None:
         observation["previous_crm"] = prev_crm
-    
+
     prompt = (
         "You are choosing the next action for a real-estate lead qualification environment. "
         "Return strict JSON with exactly one of:\n"
@@ -291,7 +294,7 @@ def format_reward(value: float) -> str:
 def run_task(task_name: str, task: TaskLevel, client: OpenAI | None, start_time: float, config: RuntimeConfig) -> EpisodeResult:
     server_url = os.getenv("LEADQUALENV_SERVER_URL", "")
     if server_url:
-        env = RemoteEnv(server_url, task, config.seed, config.max_steps)
+        env: LeadQualEnv | RemoteEnv = RemoteEnv(server_url, task, config.seed, config.max_steps)
     else:
         env = LeadQualEnv(task=task, max_turns=config.max_steps)
     env.reset(seed=config.seed)
@@ -310,7 +313,7 @@ def run_task(task_name: str, task: TaskLevel, client: OpenAI | None, start_time:
             elapsed = time.time() - start_time
             if elapsed > config.global_timeout:
                 partial_score = env._partial_grade()["task_score"] if env.profile is not None else 0.0
-                score = float(partial_score)
+                score = float(partial_score)  # type: ignore
                 print(
                     f"[STEP] step={steps + 1} action=TIMEOUT reward=0.00 done=true error=global_timeout partial_score={score:.3f}",
                     flush=True,
@@ -319,15 +322,15 @@ def run_task(task_name: str, task: TaskLevel, client: OpenAI | None, start_time:
             action, used_fallback = ask_model_for_action(client, env, config)
             result = env.step(action)
             steps += 1
-            
+
             buyer_response = ""
             try:
-                hist = result.observation.conversation_history if hasattr(result, "observation") else getattr(env, "conversation_history", [])
+                hist = result.observation.conversation_history if hasattr(result, "observation") else getattr(env, "conversation_history", [])  # type: ignore
                 if hist and hist[-1]["role"] == "user":
                     buyer_response = hist[-1]["content"].replace("\n", " ").strip()
             except AttributeError:
                 pass
-            
+
             rewards.append(float(result.reward))
             error = result.info.get("error")
             error_text = str(error) if error is not None else "null"

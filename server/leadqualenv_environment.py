@@ -24,7 +24,7 @@ class LeadQualOpenEnv:
     ) -> LeadQualObservationModel:
         task_level = TaskLevel(task)
         self._env = LeadQualEnv(task=task_level, max_turns=10)
-        
+
         obs = self._env.reset(seed=seed)
         self._step_count = 0
 
@@ -45,6 +45,14 @@ class LeadQualOpenEnv:
             info={},
         )
 
+    async def reset_async(
+        self,
+        seed: int | None = None,
+        task: str = "easy",
+        **kwargs: object,
+    ) -> LeadQualObservationModel:
+        return self.reset(seed, task, **kwargs)
+
     def step(self, action: LeadQualActionModel, **kwargs: object) -> LeadQualObservationModel:
         if self._env is None:
             raise RuntimeError("Environment must be reset before stepping.")
@@ -57,7 +65,7 @@ class LeadQualOpenEnv:
 
         result = self._env.step(env_action)
         self._step_count += 1
-        
+
         # Populate reward detail
         reward_detail = LeadQualRewardModel(
             value=result.reward,
@@ -81,6 +89,9 @@ class LeadQualOpenEnv:
             metadata={"task": self._env.task.value},
             info=result.info,
         )
+
+    async def step_async(self, action: LeadQualActionModel, **kwargs: object) -> LeadQualObservationModel:
+        return self.step(action, **kwargs)
 
     @property
     def state(self) -> LeadQualStateModel:
