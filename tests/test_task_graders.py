@@ -210,3 +210,25 @@ def test_all_tasks_produce_valid_scores():
             correct_decision=True,
         )
         assert 0.0 <= grade.score <= 1.0, f"Score out of range for {task}"
+
+
+def test_naive_agent_scores_low_on_hard():
+    """A naive agent (no verification) should score < 0.5 on hard mode."""
+    grade = grade_episode(
+        task=TaskLevel.HARD,
+        known_signals={
+            SignalKey.BUDGET: "high",
+            SignalKey.TIMELINE: "immediate",
+            SignalKey.DECISION_MAKER: True,
+            SignalKey.MOTIVATION: "self_use",
+        },
+        probe_log=[
+            (SignalKey.BUDGET, ProbeQuality.DIRECT),
+            (SignalKey.TIMELINE, ProbeQuality.DIRECT),
+            (SignalKey.DECISION_MAKER, ProbeQuality.DIRECT),
+            (SignalKey.MOTIVATION, ProbeQuality.DIRECT),
+        ],
+        correct_decision=True,  # Even with correct decision
+        misleading_signals={SignalKey.BUDGET, SignalKey.TIMELINE},
+    )
+    assert grade.score < 0.5, f"Naive agent scored {grade.score} on hard — environment may be gameable"

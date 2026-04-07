@@ -19,7 +19,9 @@ tags:
 metadata:
   domain: real_estate_sales
   max_turns: 10
-  reward_range: [-1.0, 1.1]
+  # Approx bounds: max ~1.05 (4 verified probes + rapport + correct decision at turn 5),
+  # min ~-1.05 (9 irrelevant turns + wrong decision at turn 10 with cold-lead decay).
+  reward_range: [-1.1, 1.1]
   episode_length: 10
   tasks:
     - easy

@@ -22,6 +22,8 @@ An AI agent acts as a Sales Development Representative (SDR) who must uncover a 
 
 Lead qualification is expensive, repetitive, and high-leverage. In real estate sales, SDRs spend hours daily on calls and emails to assess if prospects have the authority, urgency, and budget for follow-ups. Poor qualification wastes time on unqualified leads (costing $100–200 per bad lead) or misses hot ones, reducing conversion rates by 20–30%. Agents that master this are immediately deployable in businesses, potentially automating 40–60% of initial outreach.
 
+In Indian real estate, each qualified lead is worth ₹1,000–1,500 in SDR time and operational cost. SDR teams spend 3–4 hours daily on qualification calls, and misrouting even 20% of leads wastes ₹50,000–75,000/month per agent. This environment directly measures the skills that eliminate that waste.
+
 This benchmark captures realistic failure modes from real estate sales pipelines:
 
 - **Premature decisions**: Routing based on gut feel without verifying budget/timeline/decision-maker, common when leads sound enthusiastic.

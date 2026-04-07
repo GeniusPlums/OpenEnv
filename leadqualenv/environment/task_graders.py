@@ -2,8 +2,12 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from .models import Personality, ProbeQuality, SignalKey, TaskLevel
+
+if TYPE_CHECKING:
+    from .models import LeadProfile
 
 
 def _efficiency_score(probe_count: int, max_expected: int) -> float:
@@ -91,7 +95,7 @@ def grade_episode(
     *,
     personality: Personality | None = None,
     misleading_signals: set[SignalKey] | None = None,
-    profile: getattr(__import__("leadqualenv.environment.models", fromlist=["LeadProfile"]), "LeadProfile") | None = None, # type: ignore
+    profile: LeadProfile | None = None,
 ) -> TaskGrade:
     weights = TASK_WEIGHTS[task]
 

@@ -200,6 +200,7 @@ TASK_PROFILES: dict[TaskLevel, list[LeadProfile]] = {
             motivation="self_use", personality=Personality.TERSE,
             property_type="apartment", location="lakeside",
             surface_budget="high", surface_timeline="3-6 months",
+            verification_evasion_signals=frozenset({SignalKey.BUDGET, SignalKey.TIMELINE}),
         ),
         # 11. Surface: high/immediate → True: low/6+, DM → unqualified
         LeadProfile(
@@ -208,6 +209,7 @@ TASK_PROFILES: dict[TaskLevel, list[LeadProfile]] = {
             property_type="studio", location="arts district",
             surface_budget="high", surface_timeline="immediate",
             competitor_mention=True,
+            verification_evasion_signals=frozenset({SignalKey.BUDGET, SignalKey.TIMELINE}),
         ),
         # 12. Surface: high/immediate → True: medium/immediate, DM → qualified (partially misleading)
         LeadProfile(

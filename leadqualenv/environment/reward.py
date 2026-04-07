@@ -95,7 +95,7 @@ def cold_lead_penalty(turn_number: int, task: TaskLevel | None = None) -> float:
 
     Hard mode has earlier and steeper decay to force tighter play.
     """
-    threshold = 5 if task == TaskLevel.HARD else 6
+    threshold = 7 if task == TaskLevel.HARD else 6
     rate = COLD_LEAD_PENALTY_PER_TURN * (1.5 if task == TaskLevel.HARD else 1.0)
     if turn_number <= threshold:
         return 0.0
