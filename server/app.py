@@ -3,8 +3,10 @@ from __future__ import annotations
 import os
 from typing import Optional
 
+import gradio as gr
 from openenv.core.env_server.http_server import create_app
 
+from .demo import build_demo
 from .leadqualenv_environment import LeadQualOpenEnv
 from .models import LeadQualActionModel, LeadQualObservationModel
 
@@ -25,11 +27,9 @@ app = create_app(
     max_concurrent_envs=MAX_CONCURRENT,
 )
 
-@app.get("/")
-def root(logs: Optional[str] = None):
-    if logs == "container":
-        return {"logs": "Application started successfully"}
-    return {"status": "ok"}
+# Mount Gradio demo UI at the root path
+demo = build_demo()
+app = gr.mount_gradio_app(app, demo, path="/")
 
 
 def main(host: str = "0.0.0.0", port: int = 7860) -> None:
