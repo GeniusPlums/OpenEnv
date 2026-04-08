@@ -10,81 +10,145 @@ tags:
   - sales
 ---
 
-# LeadQualEnv
+# 🏠 LeadQualEnv
 
-**A deterministic OpenEnv benchmark for outbound real-estate lead qualification.**
+> **A deterministic OpenEnv benchmark for outbound real-estate lead qualification.**
 
-An AI agent acts as a Sales Development Representative (SDR) who must uncover a prospective buyer's budget, timeline, and decision authority before routing the lead as `qualified`, `nurture`, or `unqualified`.
+An AI agent acts as a Sales Development Representative (SDR) who must uncover a prospective buyer's **budget**, **timeline**, and **decision authority** through natural conversation before routing the lead as `qualified`, `nurture`, or `unqualified`. The environment features personality-driven buyer responses, adversarial hard-mode with misleading surface signals, lead temperature decay, and deterministic scoring — making it ideal for RL training and evaluation.
 
 ---
 
-## Why This Environment Matters
+## ✨ Key Features
 
-Lead qualification is expensive, repetitive, and high-leverage. In real estate sales, SDRs spend hours daily on calls and emails to assess if prospects have the authority, urgency, and budget for follow-ups. Poor qualification wastes time on unqualified leads (costing $100–200 per bad lead) or misses hot ones, reducing conversion rates by 20–30%. Agents that master this are immediately deployable in businesses, potentially automating 40–60% of initial outreach.
+- 🎯 **4 difficulty levels** — easy → medium → hard → requalification with increasing deception and ambiguity
+- 🔍 **Verification mechanics** — hard-mode forces agents to verify misleading surface signals before routing
+- 🌡️ **Lead temperature** — buyer engagement decays over time, penalizing over-probing
+- 🧠 **5 buyer personalities** — direct, evasive, verbose, terse, friendly — each with unique response patterns
+- 💰 **Dense reward shaping** — per-turn rewards for probe quality plus terminal decision bonuses
+- 📊 **Deterministic graders** — normalized 0.0–1.0 task scores with component breakdowns
+- 🔁 **Requalification task** — re-engaging nurture leads with CRM history and motivation shift detection
+- ⚡ **Optional LLM paraphrasing** — Groq-powered buyer responses for richer, more varied conversation
+- 🏗️ **Procedural generation** — infinite profile generation beyond the 34 curated profiles
 
-In Indian real estate, each qualified lead is worth ₹1,000–1,500 in SDR time and operational cost. SDR teams spend 3–4 hours daily on qualification calls, and misrouting even 20% of leads wastes ₹50,000–75,000/month per agent. This environment directly measures the skills that eliminate that waste.
+---
+
+## 🚀 Quickstart
+
+### Install
+
+```bash
+python -m pip install -e .[dev]
+```
+
+### Run Tests
+
+```bash
+python -m pytest
+```
+
+### Run Baseline Inference
+
+```bash
+set API_BASE_URL=https://router.huggingface.co/v1
+set MODEL_NAME=meta-llama/Meta-Llama-3.1-70B-Instruct
+set HF_TOKEN=your_hugging_face_token
+
+python inference.py
+```
+
+### Validate OpenEnv Compliance
+
+```bash
+openenv validate
+```
+
+Expected output:
+
+```text
+Validation successful
+Environment metadata loaded from openenv.yaml
+Entrypoint import succeeded: server.leadqualenv_environment:LeadQualOpenEnv
+```
+
+---
+
+## 🎮 Hugging Face Space Demo
+
+The Hugging Face Space provides an interactive demo of the full environment loop:
+
+- 🔄 **Reset** — choose difficulty (easy / medium / hard / requalification) and seed
+- 💬 **Chat** — type questions as the SDR agent and receive simulated buyer responses
+- ✅ **Decide** — route the lead as qualified, nurture, or unqualified
+- 📊 **Score** — see the full scoring breakdown (decision, coverage, quality, verification, efficiency)
+- 🔓 **Reveal** — after the episode, see the hidden buyer profile including surface traps
+
+### Demo Features
+
+| Feature | Description |
+|---------|-------------|
+| **Preset Scenarios** | One-click presets for easy, medium, hard, and requalification |
+| **Run Baseline Agent** | Runs the deterministic policy end-to-end automatically |
+| **Scoring Breakdown** | Component-level task score with weights per difficulty |
+| **Profile Reveal** | Hidden buyer profile exposed after episode — shows surface traps vs. true signals |
+| **Live Signals** | Real-time signal coverage, probe log, temperature, and confidence |
+
+> [!NOTE]
+> The Space is a demo of the **OpenEnv LeadQualEnv environment**. It demonstrates the conversation loop, hidden-profile mechanics, scoring, and reproducibility of the benchmark.
+
+---
+
+## 🌍 Why This Environment Matters
+
+Lead qualification is expensive, repetitive, and high-leverage. In real estate, SDRs spend hours daily assessing whether prospects have the authority, urgency, and budget for follow-ups. Poor qualification wastes $100–200 per bad lead or misses hot ones, reducing conversion rates by 20–30%.
 
 This benchmark captures realistic failure modes from real estate sales pipelines:
 
-- **Premature decisions**: Routing based on gut feel without verifying budget/timeline/decision-maker, common when leads sound enthusiastic.
-- **Vague probing**: Asking "tell me about yourself" instead of targeted questions like "what's your move-in timeline?", leading to unproductive conversations.
-- **Surface signal traps**: Over-relying on stated budgets (e.g., "high budget" claims) without probing deeper, as leads may exaggerate or competitors may influence responses.
-- **Verification gaps**: Not circling back on suspicious signals (e.g., "immediate timeline" with low budget), missing disqualifiers.
-- **Engagement decay**: Over-probing cools leads, mirroring real-world where buyers disengage after 5–7 questions without value.
-
-The environment supports RL training and evaluation with dense trajectory rewards, personality-driven buyer responses (e.g., evasive or direct personalities), adversarial hard-mode profiles, and deterministic graders that score real-world accuracy.
+- **Premature decisions** — routing based on gut feel without verifying budget/timeline/decision-maker
+- **Vague probing** — asking "tell me about yourself" instead of targeted questions
+- **Surface signal traps** — over-relying on stated budgets without probing deeper
+- **Verification gaps** — not circling back on suspicious signals
+- **Engagement decay** — over-probing cools leads, mirroring real-world buyer disengagement
 
 ### LLM Paraphrasing (Optional)
-Buyer responses use tailored hardcoded templates by default depending on the personality. For richer, more varied conversation, you can enable LLM-based paraphrasing. The system uses Groq to rewrite the buyer's answers in real time without altering the underlying ground-truth facts.
+
+Buyer responses use tailored hardcoded templates by default. For richer conversation, enable LLM-based paraphrasing:
 
 ```bash
-export LEADQUALENV_USE_LLM=1
-export GROQ_API_KEY="your_groq_api_key_here"
+set LEADQUALENV_USE_LLM=1
+set GROQ_API_KEY=your_groq_api_key_here
 ```
 
-> [!IMPORTANT]
-> `GROQ_API_KEY` must be set before server start. Late injection will not enable LLM mode.
+---
+
+## 📐 Environment API
+
+The core environment is implemented in [`leadqualenv/environment/env.py`](leadqualenv/environment/env.py):
+
+| Method | Description |
+|--------|-------------|
+| `reset(seed)` | Start a clean episode, returns initial observation |
+| `step(action)` | Send a message or make a terminal decision |
+| `state()` | Inspect full internal environment state |
+| `snapshot()` / `restore()` | Serialize/deserialize for batched RL |
+
+The HTTP OpenEnv wrapper is in [`server/leadqualenv_environment.py`](server/leadqualenv_environment.py).
 
 ---
 
-## Environment API
+## 🎯 Action & Observation Space
 
-The core environment is implemented in [`leadqualenv/environment/env.py`](leadqualenv/environment/env.py) and supports:
-
-- `reset(seed)` — start a clean episode, returns initial observation
-- `step(action)` — send a message or make a terminal decision, returns observation + reward + done + info
-- `state()` — inspect full internal environment state
-
-The HTTP OpenEnv wrapper is in [`server/leadqualenv_environment.py`](server/leadqualenv_environment.py) using Pydantic models from [`server/models.py`](server/models.py).
-
----
-
-## Action Space
+### Actions
 
 Each step accepts exactly one of:
 
 ```python
 {"message": "<question to ask the buyer>", "decision": null}
-```
-
-```python
 {"message": null, "decision": "qualified" | "nurture" | "unqualified"}
 ```
 
-Rules:
+Rules: `message` and `decision` are mutually exclusive. A `decision` ends the episode. Deciding before `budget`, `timeline`, and `decision_maker` are known incurs a penalty. Vague, irrelevant, or repeated probes are penalized.
 
-- `message` and `decision` are mutually exclusive
-- A `decision` ends the episode
-- Deciding before `budget`, `timeline`, and `decision_maker` are known ends with a penalty
-- Vague or irrelevant probing is penalized
-- Re-asking about known signals without verification language is penalized
-- Generic openers ("tell me about yourself") are penalized
-
----
-
-## Observation Space
-
-Each observation contains:
+### Observations
 
 ```python
 {
@@ -99,42 +163,50 @@ Each observation contains:
     "turn_number": int,
     "max_turns": int,
     "lead_temperature": float,          # 1.0 → ~0.4, decays across the episode
-    "qualification_confidence": float,   # 0.0 → 1.0, reaches 1.0 when coverage + verification are complete
+    "qualification_confidence": float,   # 0.0 → 1.0
     "property_context": str,             # e.g. "apartment in downtown"
 }
 ```
 
-**Lead temperature** simulates real-world lead cooling — the longer you take, the less engaged the buyer becomes. It now decays across the configured episode length instead of collapsing near the end by default.
-
-**Qualification confidence** gives the agent a running estimate of how much information it has gathered, combining signal coverage with verification of required signals.
+- **Lead temperature** simulates real-world lead cooling — the longer you take, the less engaged the buyer becomes.
+- **Qualification confidence** gives the agent a running estimate of information coverage + verification status.
 
 ---
 
-## Task Ladder
+## 📊 Task Ladder
 
-LeadQualEnv includes three deterministic tasks with increasing difficulty:
+| Task | Profiles | Key Challenge | Correct Decision |
+|------|----------|---------------|------------------|
+| **Easy** | 12 curated | Straightforward buyers, clear signals | Mostly `qualified`, some `unqualified` |
+| **Medium** | 10 curated | Attractive budget but delayed timeline | `nurture` |
+| **Hard** | 12 curated | Misleading surface signals | Varies — requires verification |
+| **Requalification** | 5 curated | Returning leads, motivation may shift | Varies by current signals |
 
 ### Easy
-Mostly straightforward buyers with direct, truthful answers and clear qualifying signals (immediate timeline, medium/high budget, decision maker). A small number of easy profiles are intentionally `unqualified` to test basic negative routing without introducing deceptive hard-mode behavior.
+
+Straightforward buyers with direct, truthful answers. A small number are intentionally `unqualified` to test basic negative routing.
 
 ### Medium
-Leads that look attractive on budget or motivation but should be routed to `nurture` because the timeline is 3–6 months. Tests whether the agent avoids over-qualifying. Some leads have evasive personalities.
+
+Leads that look attractive on budget but should be `nurture` because the timeline is 3–6 months. Some have evasive personalities.
 
 ### Hard
-Adversarial profiles where direct probes reveal **misleading surface values** for budget and/or timeline. The agent must use verification probes to uncover true signals before routing. Correct answers vary across `qualified`, `nurture`, and `unqualified` depending on the profile. Additional mechanics:
 
-- **Competitor pressure** — Some leads mention shopping with other agents on timeline or budget probes, creating urgency
-- **Objection handling** — Some leads push back on certain questions, blocking the first probe
-- **Surface signal traps** — Some surface signals match reality (requiring the agent to verify anyway), while others are partially misleading (only budget or only timeline is fake)
+Adversarial profiles where direct probes reveal **misleading surface values**. The agent must use verification probes to uncover true signals. Additional mechanics:
+
+- **Competitor pressure** — some leads mention shopping with other agents
+- **Objection handling** — some leads push back on certain questions
+- **Surface signal traps** — some surface values match reality (requiring the agent to verify anyway)
 
 ### Requalification
-A real-world CRM requalification task. The agent begins the conversation equipped with `previous_crm` information representing what was known (or surfaced) during the last interaction with the lead months ago. Rather than starting from scratch, the agent must selectively re-verify this prior context (some values may have shifted, especially `motivation`), simulating an SDR circling back on a cooled lead.
 
-Task profiles live in [`leadqualenv/environment/profiles.py`](leadqualenv/environment/profiles.py) — curated profiles across the difficulty levels, with diverse personalities, property types, and locations. The `reset` method also supports infinite procedural profile generation using the `generated_profiles` count.
+The agent begins with `previous_crm` data from the last interaction. Rather than starting from scratch, the agent must selectively re-verify — some values may have shifted, especially `motivation`.
+
+Task profiles: [`leadqualenv/environment/profiles.py`](leadqualenv/environment/profiles.py) — 34 curated profiles plus infinite procedural generation.
 
 ---
 
-## Reward Design
+## 💰 Reward Design
 
 Reward shaping is implemented in [`leadqualenv/environment/reward.py`](leadqualenv/environment/reward.py).
 
@@ -160,27 +232,23 @@ Reward shaping is implemented in [`leadqualenv/environment/reward.py`](leadquale
 | Correct decision | `+0.50` | `+0.15` | up to `+0.10` |
 | Incorrect decision | `-0.40` | — | — |
 
-This produces meaningful learning signal over the full trajectory while aligning with the final objective. The cold lead penalty and timing curve ensure agents learn to be efficient without being reckless.
-
 ---
 
-## Task Graders
+## 📝 Task Graders
 
-Task-level graders in [`leadqualenv/environment/task_graders.py`](leadqualenv/environment/task_graders.py) are deterministic and return normalized scores in `[0.0, 1.0]`.
-
-Scoring components:
+Deterministic graders in [`leadqualenv/environment/task_graders.py`](leadqualenv/environment/task_graders.py) return normalized scores in `[0.0, 1.0]`.
 
 | Component | Description |
 |-----------|-------------|
 | `correct_decision` | 1.0 if correct, 0.0 if wrong |
-| `signal_coverage` | Proportion of signals uncovered (required + motivation bonus) |
-| `probe_quality` | Average quality of probes (irrelevant=0, vague=0.2, direct=0.8, verified=1.0) |
-| `verification` | Proportion of required signals that were verified |
-| `efficiency` | Penalizes excessive probing beyond expected count |
-| `misleading_detection` | Hard-mode credit for verifying signals that were actually misleading |
-| `motivation_shift` | Requalification credit for uncovering changes in buyer motivation |
+| `signal_coverage` | Proportion of signals uncovered |
+| `probe_quality` | Average probe quality (irrelevant=0, vague=0.2, direct=0.8, verified=1.0) |
+| `verification` | Proportion of required signals verified |
+| `efficiency` | Penalizes excessive probing |
+| `misleading_detection` | Hard-mode credit for verifying traps |
+| `motivation_shift` | Requalification credit for uncovering motivation changes |
 
-Per-task weights:
+**Per-task weights:**
 
 | Task | Decision | Coverage | Quality | Verification | Efficiency | Misleading | Motiv. Shift |
 |------|----------|----------|---------|--------------|------------|------------|--------------|
@@ -189,49 +257,13 @@ Per-task weights:
 | Hard | 0.20 | 0.10 | 0.10 | **0.45** | 0.05 | 0.10 | — |
 | Requal. | 0.35 | 0.15 | 0.10 | 0.25 | 0.05 | — | 0.10 |
 
-Hard mode heavily weights verification (**45%**) and drastically reduces base decision points, forcing the agent to exhibit highly precise verification behavior instead of randomly guessing correct decisions.
+Hard mode heavily weights verification (**45%**), forcing precise verification behavior over random guessing.
 
 ---
 
-## Baseline Inference
+## 🤖 Baseline Inference
 
-The inference entrypoint is [`inference.py`](inference.py). It:
-
-- Uses the OpenAI Python client for all model calls
-- Reads credentials from `HF_TOKEN` or `OPENAI_API_KEY`
-- Reads endpoint configuration from `API_BASE_URL` and `MODEL_NAME`
-- Emits required `[START]`, `[STEP]`, and `[END]` logs with `score=` field
-- Falls back to a deterministic policy if the model output is invalid or unavailable
-- Strips markdown-wrapped JSON from LLM responses
-- Applies a 15-second timeout on API calls and a 15-minute global runtime cap
-- Uses the same lead-classification logic as the grader for its deterministic fallback
-- Preserves partial `task_score` on incomplete episodes such as timeout or no-decision endings
-
-### Required Environment Variables
-
-```bash
-set API_BASE_URL=https://router.huggingface.co/v1
-set MODEL_NAME=meta-llama/Meta-Llama-3.1-70B-Instruct
-set HF_TOKEN=your_hugging_face_or_router_token
-```
-
-### Optional Environment Variables
-
-```bash
-set OPENAI_API_KEY=your_openai_compatible_token
-set LEADQUALENV_TASK=easy
-set LEADQUALENV_SEED=0
-set LEADQUALENV_MAX_STEPS=10
-set LEADQUALENV_BENCHMARK=leadqualenv
-set LEADQUALENV_USE_LLM=1
-set GROQ_API_KEY=your_groq_api_key
-```
-
-### Run
-
-```bash
-python inference.py
-```
+The inference entrypoint is [`inference.py`](inference.py). It uses the OpenAI Python client, reads credentials from `HF_TOKEN` or `OPENAI_API_KEY`, emits `[START]`/`[STEP]`/`[END]` logs, and falls back to a deterministic policy if the LLM is unavailable.
 
 ### Reproducible Baseline Scores (seed=0, deterministic fallback)
 
@@ -244,17 +276,18 @@ python inference.py
 
 ### LLM Testing (Groq Llama 3.3 70B Versatile)
 
-With optimized prompts, the model achieves:
-- Easy: 0.989 (matches baseline)
-- Medium: 0.445 (improves on requal logic)
-- Hard: 0.195 (challenges verification)
-- Requal: 0.730 (strong performance)
+| Task | Score | Notes |
+|------|-------|-------|
+| Easy | 0.989 | Matches baseline |
+| Medium | 0.445 | Struggles with nurture routing |
+| Hard | 0.195 | Challenges verification mechanics |
+| Requal. | 0.730 | Strong performance |
 
-Demonstrates environment's challenge for frontier models, suitable for RL training and evaluation.
+Demonstrates the environment's challenge gradient for frontier models.
 
 ---
 
-## Example Conversation (Easy Task)
+## 💬 Example Conversation (Easy Task)
 
 ```
 [system] You are qualifying a prospective real estate buyer.
@@ -282,48 +315,7 @@ Demonstrates environment's challenge for frontier models, suitable for RL traini
 
 ---
 
-## Setup
-
-### Install Locally
-
-```bash
-python -m pip install -e .[dev]
-python -m pytest
-python inference.py
-```
-
-### OpenEnv Validation
-
-```bash
-openenv validate
-```
-
-Example passing output:
-
-```text
-Validation successful
-Environment metadata loaded from openenv.yaml
-Entrypoint import succeeded: server.leadqualenv_environment:LeadQualOpenEnv
-```
-
----
-
-## Docker and Hugging Face Spaces
-
-The repository uses the root [`Dockerfile`](Dockerfile) for both local container runs and Hugging Face Spaces deployment.
-
-### Build and Run Locally
-
-```bash
-docker build -t leadqualenv .
-docker run --rm -p 7860:7860 leadqualenv
-```
-
-The HF Space should be tagged with `openenv` and exposes the HTTP environment from [`server/app.py`](server/app.py).
-
----
-
-## Project Structure
+## 📁 Project Structure
 
 ```text
 leadqualenv/
@@ -331,17 +323,17 @@ leadqualenv/
 │   ├── env.py            # Core LeadQualEnv with step/reset/state
 │   ├── grader.py         # Probe classification and lead classification
 │   ├── models.py         # Typed dataclass models (Action, Observation, etc.)
-│   ├── profiles.py       # 34 lead profiles across 3 difficulty levels
+│   ├── profiles.py       # 34 lead profiles across 4 difficulty levels
 │   ├── reward.py         # Dense reward shaping with timing and decay
 │   ├── simulator.py      # Personality-aware buyer response generation
 │   └── task_graders.py   # Deterministic 0.0–1.0 graders per task
 ├── py.typed              # PEP 561 type marker
 └── __init__.py
 server/
-├── app.py                # FastAPI/uvicorn HTTP server
+├── app.py                # FastAPI/uvicorn HTTP server + Gradio demo mount
+├── demo.py               # Gradio demo UI for Hugging Face Spaces
 ├── leadqualenv_environment.py  # OpenEnv Environment wrapper
-├── models.py             # Pydantic API models
-└── Dockerfile            # Local + HF Spaces deployment
+└── models.py             # Pydantic API models
 tests/
 ├── test_classifier.py    # Lead classification tests
 ├── test_episodes.py      # Full episode integration tests
@@ -351,13 +343,44 @@ tests/
 └── test_task_graders.py  # Grader scoring tests
 inference.py              # Baseline inference script
 openenv.yaml              # OpenEnv metadata
-Dockerfile                # Root container build
+Dockerfile                # Docker container (local + HF Spaces)
 pyproject.toml            # Project configuration
 ```
 
 ---
 
-## Limitations
+## 🐳 Docker & Deployment
+
+The root [`Dockerfile`](Dockerfile) is used for both local container runs and Hugging Face Spaces deployment.
+
+```bash
+docker build -t leadqualenv .
+docker run --rm -p 7860:7860 leadqualenv
+```
+
+The HF Space is tagged with `openenv` and exposes both the HTTP environment API and the Gradio demo UI at `/`.
+
+---
+
+## ⚙️ Configuration Reference
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `API_BASE_URL` | For LLM inference | — | OpenAI-compatible API endpoint |
+| `MODEL_NAME` | For LLM inference | — | Model identifier |
+| `HF_TOKEN` | For LLM inference | — | Hugging Face API token |
+| `OPENAI_API_KEY` | Alternative to HF_TOKEN | — | OpenAI-compatible API key |
+| `LEADQUALENV_TASK` | No | `easy` | Task level: easy, medium, hard, requalification |
+| `LEADQUALENV_SEED` | No | `0` | Random seed for reproducibility |
+| `LEADQUALENV_MAX_STEPS` | No | `10` | Maximum turns per episode |
+| `LEADQUALENV_USE_LLM` | No | `0` | Enable LLM buyer paraphrasing (`1`/`true`) |
+| `GROQ_API_KEY` | For LLM paraphrasing | — | Groq API key |
+| `LEADQUALENV_MAX_CONCURRENT` | No | `4` | Max concurrent environment instances |
+
+---
+
+## ⚠️ Limitations
 
 - The probe classifier uses keyword matching — sophisticated rephrasing may not be detected correctly
-- Buyer responses are template-based by default; optional LLM paraphrasing can be enabled with `LEADQUALENV_USE_LLM=1` and `GROQ_API_KEY`
+- Buyer responses are template-based by default; enable LLM paraphrasing with `LEADQUALENV_USE_LLM=1` for more variety
+- Hard-mode surface traps follow fixed patterns per profile — a memorizing agent could exploit this (mitigated by procedural generation)
